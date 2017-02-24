@@ -2,7 +2,7 @@
 
 # Load up other dotfiles ~/.aliases, etc
 
-for file in ~/.{aliases}; do
+for file in ~/.{aliases,functions}; do
     [ -r "$file" ] && source "$file"
 done
 unset file
