@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Load up other dotfiles ~/.aliases, etc
 
 for file in ~/.{aliases,functions}; do
