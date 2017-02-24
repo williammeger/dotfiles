@@ -12,6 +12,13 @@ alias .....="cd ../../../.."
 alias cl="clear"
 alias -- -="cd -"
 
+# thanks to paul irish for these
+alias chmox='chmod -x'
+
+alias cask='brew cask'  
+alias where=which  
+alias brwe=brew  #typos
+
 alias vi="/usr/local/bin/vim"
 
 # dotfiles under git no more symlinks !
