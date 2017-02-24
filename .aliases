@@ -1,8 +1,17 @@
 #!/bin/bash
 # aliases for .bash_profile
 
+# easier navigation
 alias ..="cd .."
 alias cd..="cd .."
 alias ...="cd ../.."
 alias ....="cd ../../.."
 alias .....="cd ../../../.."
+
+
+alias vi="/usr/local/bin/vim"
+
+# dotfiles under git no more symlinks !
+# https://news.ycombinator.com/item?id=11071754
+# https://developer.atlassian.com/blog/2016/02/best-way-to-store-dotfiles-git-bare-repo/
+alias config="/usr/local/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME"
