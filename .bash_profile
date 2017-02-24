@@ -1,8 +1,12 @@
 #!/bin/bash
 
-#aliases
-alias vi="/usr/local/bin/vim"
-alias config="/usr/local/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME"
+# Load up other dotfiles ~/.aliases, etc
+
+for file in ~/.{aliases}; do
+    [ -r "$file" ] && source "$file"
+done
+unset file
+
 #set up the paths
 export PATH=/usr/local/bin:$PATH
 
