@@ -1,0 +1,37 @@
+# working files
+.vim/viminfo
+.vim/swaps/*
+.vim/undo
+.vim/.netrwhist
+*~
+tags
+
+# git credential file
+.gitconfig.local
+
+
+# nope lol 
+node_modules
+
+# Folder view configuration files
+.DS_Store
+Desktop.ini
+
+# Thumbnail cache files
+._*
+Thumbs.db
+
+# Files that might appear on external disks
+.Spotlight-V100
+.Trashes
+
+# Compiled Python files
+*.pyc
+
+# fish shell
+fishd.*
+.config/fish/fish_history
+fish/fish_history
+
+# random
+shilocation
