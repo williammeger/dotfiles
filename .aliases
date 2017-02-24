@@ -8,6 +8,9 @@ alias ...="cd ../.."
 alias ....="cd ../../.."
 alias .....="cd ../../../.."
 
+# cd, clear and such
+alias cl="clear"
+alias -- -="cd -"
 
 alias vi="/usr/local/bin/vim"
 
