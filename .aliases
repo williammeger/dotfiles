@@ -1,0 +1,8 @@
+#!/bin/bash
+# aliases for .bash_profile
+
+alias ..="cd .."
+alias cd..="cd .."
+alias ...="cd ../.."
+alias ....="cd ../../.."
+alias .....="cd ../../../.."
