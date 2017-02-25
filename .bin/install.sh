@@ -2,6 +2,9 @@
 # awesome install script by Nicola Paolucci
 # https://bitbucket.org/durdn/cfg
 
+# backs up any local copies of .bashrc, .gitignore 
+# no more symlinking with --bare  :)
+
 git clone --bare https://github.com/williammeger/dotfiles.git $HOME/.dotfiles
 function config {
    /usr/local/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME $@
