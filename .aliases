@@ -17,6 +17,7 @@ alias chmox='chmod -x'
 alias cask='brew cask'  
 alias where=which  
 alias brwe=brew  #typos
+alias abd=adb #android typos
 
 alias vi="/usr/local/bin/vim"
 
