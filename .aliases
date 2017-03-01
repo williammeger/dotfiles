@@ -7,7 +7,7 @@ alias ...="cd ../.."
 alias ....="cd ../../.."
 alias .....="cd ../../../.."
 
-#ls mods
+# ls mods
 alias ls="ls -GFh"
 
 # cd, clear and such
@@ -16,6 +16,9 @@ alias -- -="cd -"
 
 # thanks to paul irish for these
 alias chmox='chmod -x'
+
+# colorize `cat` requires: sudo pip/easy_install -U Pygments
+alias ccat='pygmentize -O style=monokai -f console256 -g'
 
 alias cask='brew cask'  
 alias where=which  
