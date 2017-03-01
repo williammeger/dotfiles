@@ -11,5 +11,5 @@ PATH=$PATH:/sbin
 export PATH
 
 #Android
-export ANDROID_HOME=$HOME/Library/Android/sdk
-export PATH=$PATH:$ANDROID_HOME/tools
+export ANDROID_HOME=$HOME/Library/Android/sdk/
+export PATH=$PATH:$ANDROID_HOME/tools/
