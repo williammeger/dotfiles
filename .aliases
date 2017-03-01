@@ -7,6 +7,9 @@ alias ...="cd ../.."
 alias ....="cd ../../.."
 alias .....="cd ../../../.."
 
+#ls mods
+alias ls="ls -GFh"
+
 # cd, clear and such
 alias cc="clear"
 alias -- -="cd -"
