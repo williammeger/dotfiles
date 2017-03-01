@@ -19,7 +19,7 @@ alias -- -="cd -"
 alias chmox='chmod -x'
 
 # colorize `cat` requires: sudo pip/easy_install -U Pygments
-alias ccat='pygmentize -O style=monokai -f console256 -g'
+alias ccat='pygmentize -O style=monokai,linenos=1 -f console256 -g'
 
 alias cask='brew cask'  
 alias where=which  
