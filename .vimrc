@@ -6,7 +6,6 @@ set visualbell "otherwise its loudd
 set background=dark
 syntax on
 filetype on
-colorscheme molokai 
 
 "Indentations and tabs
 "1 tab == 4 spaces :)
