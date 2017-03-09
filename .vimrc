@@ -1,11 +1,14 @@
 "setting things
 set autoindent "carry over from previous line
 set esckeys "allow cursors keys in insert mode
+set number "count the lines
 set visualbell "otherwise its loudd
 
 set background=dark
 syntax on
 filetype on
+colorscheme molokai
+
 
 "Indentations and tabs
 "1 tab == 4 spaces :)
