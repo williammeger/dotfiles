@@ -1,21 +1,37 @@
-"setting things
-set autoindent "carry over from previous line
-set esckeys "allow cursors keys in insert mode
-set number "count the lines
-set visualbell "otherwise its loudd
 
+" Settings //////////////////////////////////
+
+" Syntax highlighting {{{
+set t_Co=256
 set background=dark
 syntax on
 filetype on
-colorscheme molokai
+colorscheme onedark
+" }}}
 
-
-"Indentations and tabs
-"1 tab == 4 spaces :)
-set shiftwidth=4
-set tabstop=4
-set expandtab "expanding tabs to spaces
-
+" Setting things {{{
 set ai "auto indent
+set autoindent "carry over from previous line
+set cursorline "higlight current line
+set esckeys "allow cursors keys in insert mode
+set expandtab "expanding tabs to spaces
+set foldenable "enable folding
+set foldlevel=0 "close all folds by default
+set foldminlines=0 "allow folding single lines
+set number "count the lines
+set shiftwidth=2 "Indentations and tabs
+set showtabline=2 "show tab bar
 set si "smart indent
-set wrap "wrap lines
+set tabstop=2 "1 tab == 2 spaces :)
+set visualbell "otherwise its loudd
+set nowrap "dont wrap lines
+" }}}
+
+" Key Remaps {{{
+"command mode inverse tab
+nnoremap <S-Tab> << 
+" insert mode inverse tab
+inoremap <S-Tab> <C-d>
+
+" }}}
+
