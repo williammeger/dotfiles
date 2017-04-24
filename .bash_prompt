@@ -1,0 +1,111 @@
+
+default_username='williammeger'
+
+# Trim long directory paths (requires bash 4.x)
+PROMPT_DIRTRIM=2
+
+set_prompts() {
+  
+    local black="" blue="" bold="" cyan="" green="" orange="" \
+          purple="" red="" reset="" white="" yellow=""
+
+    if [ -x /usr/bin/tput ] && tput setaf 1 &> /dev/null; then
+
+        tput sgr0   # Reset colors
+      
+        bold=$(tput bold)
+        reset=$(tput sgr0)
+        
+        black=$(tput setaf 0)
+        blue=$(tput setaf 33)
+        cyan=$(tput setaf 37) 
+        green=$(tput setaf 190)
+        orange=$(tput setaf 172)
+        purple=$(tput setaf 141)
+        red=$(tput setaf 124)
+        violet=$(tput setaf 61)
+        magenta=$(tput setaf 9)
+        white=$(tput setaf 8)
+        yellow=$(tput setaf 136)
+
+    else
+
+        bold=""
+        reset="\e[0m"
+
+        black="\e[1;30m"
+        blue="\e[1;34m"
+        cyan="\e[1;36m"
+        green="\e[1;32m"
+        orange="\e[1;33m"
+        purple="\e[1;35m"
+        red="\e[1;31m"
+        magenta="\e[1;31m"
+        violet="\e[1;35m"
+        white="\e[1;37m"
+        yellow="\e[1;33m"
+
+    fi
+    
+    function usernamehost() {
+        
+        # Highlight user name when logged in as root
+        if [[ "${USER}" == "*root" ]]; then
+            userStyle="${red}";
+        else
+            userStyle="${magenta}";
+        fi;
+
+        userhost=""
+        userhost+="\[${userStyle}\]$USER "
+        userhost+="\[${white}\]at "
+        userhost+="\[${orange}\]$HOSTNAME "
+        userhost+="\[${white}\]in"
+
+        # if [ $USER != "$default_username" ]; then echo $userhost ""; fi
+
+    }
+    
+    function prompt_git() {
+        
+        # check if inside git repo
+        git rev-parse --is-inside-work-tree &>/dev/null || return
+        
+        # check current branch
+        branchName="$(git symbolic-ref --quiet --short HEAD 2> /dev/null || \
+        git describe --all --exact-match HEAD 2> /dev/null || \
+        git rev-parse --short HEAD 2> /dev/null || \
+        echo '(unknown)')";
+
+        # check for local changes not committed (dirty)
+        dirty=$(git diff --no-ext-diff --quiet --ignore-submodules --exit-code || echo -e "*")
+
+        [ -n "${s}" ] && s=" [${s}]";
+        echo -e "${1}${branchName}${2}${dirty}";
+
+        return
+      
+    }
+    
+
+    #--------------
+    # Prompt String
+    #--------------
+    PS1="\[\033]0;\w\007\]"                                   # terminal title (set to current dir)
+    PS1+="\u@\h "
+    PS1+="\[$bold\]"
+    PS1+="\[$(usernamehost)\]"                                # username at host
+    PS1+="\[$green\]\w"                                       # working directory
+    PS1+="\$(prompt_git \"$white on $purple\" \"$cyan\")"     # git repository details
+
+    if [ "$SSH_CLIENT" ]; then text=" ssh-session"            # check if in ssh connection
+        PS1+="\[$bold$red${text}\]"
+    fi
+
+    PS1+="\[$reset$white$bold\] ⏣  \[$reset\]"
+
+    export PS1
+}
+
+set_prompts
+unset set_prompts
