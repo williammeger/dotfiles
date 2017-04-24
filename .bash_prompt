@@ -4,6 +4,12 @@ default_username='williammeger'
 # Trim long directory paths (requires bash 4.x)
 PROMPT_DIRTRIM=2
 
+if [[ $COLORTERM = gnome-* && $TERM = xterm ]] && infocmp gnome-256color > /dev/null 2>&1; then
+    export TERM=gnome-256color
+elif infocmp xterm-256color > /dev/null 2>&1; then
+    export TERM=xterm-256color
+fi
+
 set_prompts() {
   
     local black="" blue="" bold="" cyan="" green="" orange="" \
@@ -100,7 +106,7 @@ set_prompts() {
     PS1+="\$(prompt_git \"$white on $purple\" \"$cyan\")"     # git repository details
 
     if [ "$SSH_CLIENT" ]; then text=" (ssh-session)"            # check if in ssh connection
-        PS1+="\[$bold$red${text}$\]"
+        PS1+="\[$bold$red${text}\]"
     fi
 
     PS1+="\[$reset$white$bold\] ⏣  \[$reset\]"
