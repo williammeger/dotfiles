@@ -1,4 +1,4 @@
-
+#!/bin/bash
 default_username='williammeger'
 
 # Trim long directory paths (requires bash 4.x)
@@ -63,13 +63,14 @@ set_prompts() {
         fi;
 
         userhost=""
-        userhost+="\[${userStyle}\]$USER "
-        userhost+="\[${white}\]at "
-        userhost+="\[${orange}\]$HOSTNAME "
-        userhost+="\[${white}\]in"
+        userhost+="\[${userStyle}\]$USER"
+        userhost+="\[${white}\]@"
+        userhost+="\[${orange}\]\h"
 
-        # if [ $USER != "$default_username" ]; then echo $userhost ""; fi
-
+        if [ $USER != "$default_username" ]; then echo $userhost ""; 
+        else 
+          echo $userhost
+        fi;
     }
     
     function prompt_git() {
@@ -100,16 +101,16 @@ set_prompts() {
     
     PS1="\[\033]0;\w\007\]"                                   # terminal title (set to current dir)
     PS1+="\[$bold\]"
-    PS1+="\[$white\]\u@\[$cyan\]\h "
+    #PS1+="\[$white\]\u@\[$cyan\]\h "                          # this works
     PS1+="\[$(usernamehost)\]"                                # username at host
-    PS1+="\[$green\]\w"                                       # working directory
+    PS1+="\[$green\] \w"                                       # working directory
     PS1+="\$(prompt_git \"$white on $purple\" \"$cyan\")"     # git repository details
 
-    if [ "$SSH_CLIENT" ]; then text=" (ssh-session)"            # check if in ssh connection
+    if [ "$SSH_CLIENT" ]; then text=" (ssh-session) "         # check if in ssh connection
         PS1+="\[$bold$red${text}\]"
     fi
 
-    PS1+="\[$reset$white$bold\] ⏣  \[$reset\]"
+    PS1+="\[$reset$white\] ⏣  \[$reset\]"
 
     export PS1
 }
