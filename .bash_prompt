@@ -67,10 +67,8 @@ set_prompts() {
         userhost+="\[${white}\]@"
         userhost+="\[${orange}\]\h"
 
-        if [ $USER != "$default_username" ]; then echo $userhost ""; 
-        else 
-          echo $userhost
-        fi;
+        echo $userhost
+
     }
     
     function prompt_git() {
