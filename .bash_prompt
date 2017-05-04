@@ -107,7 +107,7 @@ set_prompts() {
         PS1+="\[$bold$red${text}\]";
     fi;
 
-    PS1+="\n"
+    PS1+="\[\n\]"
     PS1+="\[$reset$white\]$  \[$reset\]"
 
     export PS1
