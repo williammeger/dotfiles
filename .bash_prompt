@@ -65,7 +65,7 @@ set_prompts() {
         userhost=""
         userhost+="\[${userStyle}\]$USER"
         userhost+="\[${white}\]@"
-        userhost+="\[${orange}\]$HOSTNAME"
+        userhost+="\[${orange}\]\h"
 
         echo $userhost
 
