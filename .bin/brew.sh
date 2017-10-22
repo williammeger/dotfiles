@@ -16,9 +16,12 @@ brew install git
 brew install node
 brew install tree
 
+brew install java
+
 # android tools
 brew install android-platform-tools
 brew install maven
+brew install ant
 brew install gradle
 brew install pidcat #color dat logcat
 
