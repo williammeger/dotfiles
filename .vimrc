@@ -14,6 +14,7 @@
   set autoindent "carry over from previous line
   set cursorline "higlight current line
   set esckeys "allow cursors keys in insert mode
+  set encoding=utf-8
   set expandtab "expanding tabs to spaces
   set foldenable "enable folding
   set foldlevel=0 "close all folds by default
@@ -106,6 +107,7 @@ Plug 'junegunn/vim-emoji'
 Plug 'pangloss/vim-javascript'
 Plug 'scrooloose/nerdcommenter'
 Plug 'scrooloose/syntastic'
+Plug 'tpope/vim-fugitive'
 
 call plug#end()
 "}}}
