@@ -94,6 +94,14 @@ augroup airline_config
 augroup END
 "}}}
 
+" NERD Commenter
+ augroup nerd_commenter
+  autocmd!
+  let NERDSpaceDelims=1
+  let NERDCompactSexyComs=1
+augroup END
+" }}}
+
 
 " Plugins //////////////////////////////////
 
