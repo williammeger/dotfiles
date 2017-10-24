@@ -23,6 +23,7 @@
   set laststatus=2 "always show status line
   set noerrorbells "disable error bells
   set nostartofline "dont reset cursor to start of line
+  set noshowmode "airline handles the rest
   set nowrap "dont wrap lines
   set number "count the lines
   set report=0 "show all changes
@@ -77,3 +78,34 @@
   nnoremap Y y$
 "}}}
 
+" Plugin Configuration //////////////////////////////////
+
+" Airline.vim {{{
+augroup airline_config
+  autocmd!
+  let g:airline_powerline_fonts = 1
+  let g:airline_enable_syntastic = 1
+  let g:airline#extensions#tabline#buffer_nr_format = '%s '
+  let g:airline#extensions#tabline#buffer_nr_show = 1
+  let g:airline#extensions#tabline#enabled = 1
+  let g:airline#extensions#tabline#fnamecollapse = 0
+  let g:airline#extensions#tabline#fnamemod = ':t'
+augroup END
+"}}}
+
+
+" Plugins //////////////////////////////////
+
+" Load plugins {{{
+call plug#begin('~/.vim/plugged')
+
+Plug 'ap/vim-css-color'
+Plug 'bling/vim-airline'
+Plug 'junegunn/vim-easy-align'
+Plug 'junegunn/vim-emoji'
+Plug 'pangloss/vim-javascript'
+Plug 'scrooloose/nerdcommenter'
+Plug 'scrooloose/syntastic'
+
+call plug#end()
+"}}}
