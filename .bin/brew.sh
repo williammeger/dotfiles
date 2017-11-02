@@ -16,8 +16,6 @@ brew install git
 brew install node
 brew install tree
 
-brew install java
-
 # android tools
 brew install android-platform-tools
 brew install maven
