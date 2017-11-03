@@ -6,7 +6,7 @@
   set background=dark
   syntax on
   filetype on
-  colorscheme onedark
+  colorscheme predawn 
 " }}}
 
 " Setting things {{{
@@ -36,6 +36,7 @@
   set splitright "new window right
   set splitbelow "new window below
   set tabstop=2 "1 tab == 2 spaces :)
+  set ttimeoutlen=50 "faster airline status refresh
   set ttyfast "send more chars
   set undofile "persistent undo
   set visualbell "otherwise its loudd
@@ -91,6 +92,7 @@ augroup airline_config
   let g:airline#extensions#tabline#enabled = 1
   let g:airline#extensions#tabline#fnamecollapse = 0
   let g:airline#extensions#tabline#fnamemod = ':t'
+  let g:airline_theme='zenburn'
 augroup END
 "}}}
 
@@ -110,6 +112,7 @@ call plug#begin('~/.vim/plugged')
 
 Plug 'ap/vim-css-color'
 Plug 'bling/vim-airline'
+Plug 'vim-airline/vim-airline-themes'
 Plug 'bling/vim-bufferline'
 Plug 'junegunn/vim-easy-align'
 Plug 'junegunn/vim-emoji'
