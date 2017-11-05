@@ -13,7 +13,7 @@
   set ai "auto indent
   set autoindent "carry over from previous line
   set backspace=indent,eol,start
-  set backupdir=~/.vim_undo "point all un~ files here
+  set backupdir=/var/tmp,/tmp "point all vim generated backup files here
   set cursorline "higlight current line
   set esckeys "allow cursors keys in insert mode
   set encoding=utf-8
