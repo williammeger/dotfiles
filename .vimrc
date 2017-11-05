@@ -58,7 +58,7 @@
 
 " Configuration //////////////////////////////////
 
-" FastEscape
+" FastEscape {{{
 " faster transition between modes
 if ! has('gui_running')
   set ttimeoutlen=10
@@ -68,7 +68,7 @@ if ! has('gui_running')
     au InsertLeave * set timeoutlen=1000
   augroup END
 endif
-"}}}
+" }}}
 
 " faster scroll in viewport {{{
   nnoremap <C-e> 3<C-e>
@@ -80,18 +80,18 @@ endif
     map + <C-w>+
     map - <C-m>-
   endif
-"}}}
+" }}}
 
 " better split resizing (Ctrl-j, Ctrl-k, Ctrl-h, Ctrl-l) {{{
   map <C-j> <C-W>j
   map <C-k> <C-W>k
   map <C-h> <C-W>h
   map <C-l> <C-W>l
-"}}}
+" }}}
 
 " yank from cursor to EOL {{{
   nnoremap Y y$
-"}}}
+" }}}
 
 " Plugin Configuration //////////////////////////////////
 
@@ -107,7 +107,7 @@ augroup airline_config
   let g:airline#extensions#tabline#fnamemod = ':t'
   let g:airline_theme='zenburn'
 augroup END
-"}}}
+" }}}
 
 " NERD Commenter
  augroup nerd_commenter
@@ -135,4 +135,4 @@ Plug 'scrooloose/syntastic'
 Plug 'tpope/vim-fugitive'
 
 call plug#end()
-"}}}
+" }}}
