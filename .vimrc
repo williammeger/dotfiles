@@ -12,6 +12,8 @@
 " Setting things {{{
   set ai "auto indent
   set autoindent "carry over from previous line
+  set backspace=indent,eol,start
+  set backupdir=~/.vim_undo "point all un~ files here
   set cursorline "higlight current line
   set esckeys "allow cursors keys in insert mode
   set encoding=utf-8
@@ -20,8 +22,8 @@
   set foldlevel=0 "close all folds by default
   set foldminlines=0 "allow folding single lines
   set history=1000 "longer history than default 20
-  set lazyredraw "only redraw when needed
   set laststatus=2 "always show status line
+  set lazyredraw "only redraw when needed
   set noerrorbells "disable error bells
   set nostartofline "dont reset cursor to start of line
   set noshowmode "airline handles the rest
@@ -36,7 +38,6 @@
   set splitright "new window right
   set splitbelow "new window below
   set tabstop=2 "1 tab == 2 spaces :)
-  set ttimeoutlen=50 "faster airline status refresh
   set ttyfast "send more chars
   set undofile "persistent undo
   set visualbell "otherwise its loudd
@@ -56,6 +57,18 @@
 " }}}
 
 " Configuration //////////////////////////////////
+
+" FastEscape
+" faster transition between modes
+if ! has('gui_running')
+  set ttimeoutlen=10
+  augroup FastEscape
+    autocmd!
+    au InsertEnter * set timeoutlen=0
+    au InsertLeave * set timeoutlen=1000
+  augroup END
+endif
+"}}}
 
 " faster scroll in viewport {{{
   nnoremap <C-e> 3<C-e>
