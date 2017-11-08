@@ -15,6 +15,7 @@ brew install vim --with-override-system-vi
 brew install git
 brew install node
 brew install tree
+brew install bash-completion
 
 # android tools
 brew install android-platform-tools
