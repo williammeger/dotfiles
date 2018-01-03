@@ -6,14 +6,13 @@
   set background=dark
   syntax on
   filetype on
-  colorscheme predawn 
+  colorscheme zenburn 
 " }}}
 
 " Setting things {{{
   set ai "auto indent
   set autoindent "carry over from previous line
   set backspace=indent,eol,start
-  set backupdir=/var/tmp,/tmp "point all vim generated backup files here
   set cursorline "higlight current line
   set esckeys "allow cursors keys in insert mode
   set encoding=utf-8
@@ -39,7 +38,6 @@
   set splitbelow "new window below
   set tabstop=2 "1 tab == 2 spaces :)
   set ttyfast "send more chars
-  set undofile "persistent undo
   set visualbell "otherwise its loudd
   set wildchar=<TAB> " Character for CLI expansion (TAB-completion)
   set wildignore+=.DS_Store
