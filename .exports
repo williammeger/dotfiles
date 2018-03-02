@@ -1,2 +1,24 @@
+#!/bin/bash
+
+# Configure env 
+
 # vim as default
 export EDITOR="vim"
+
+# Android
+export ANDROID_HOME=$HOME/Library/Android/sdk
+
+# Proxy
+PORT_NUMBER=:8888
+#export HTTP_PROXY=$(get_local_ip)$PORT_NUMBER 
+
+# Java
+JAVA7_JDK=$(/usr/libexec/java_home -v 1.7*)
+JAVA8_JDK=$(/usr/libexec/java_home -v 1.8*)
+JAVA9_JDK=$(/usr/libexec/java_home -v 9.0.*)
+
+export JAVA8_HOME=$JAVA8_JDK
+export JAVA7_HOME=$JAVA7_JDK
+
+export JAVA_HOME=$JAVA8_HOME
+
