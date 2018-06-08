@@ -5,6 +5,7 @@
         df = diff --color --color-words --abbrev
         lg = log --color --graph --abbrev-commit
         pr = !sh -c \"git fetch origin pull/${1}/head:pr${1}\" -
+        rename = branch -m
 
 [fetch]
         prune = true
