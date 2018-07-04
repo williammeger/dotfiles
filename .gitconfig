@@ -6,6 +6,7 @@
         lg = log --color --graph --abbrev-commit
         pr = !sh -c \"git fetch origin pull/${1}/head:pr${1}\" -
         rename = branch -m
+        hf = !sh -c \"git log --pretty=format: --name-only | sort | uniq -c | sort -rg | head -15\"
 
 [fetch]
         prune = true
