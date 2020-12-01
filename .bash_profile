@@ -1,6 +1,6 @@
 # Load up other dotfiles ~/.aliases, etc
 
-for file in ~/.{extra,bash_prompt,exports,aliases,functions}; do
+for file in ~/.{extra,bash_prompt,exports-local,exports,aliases,functions,env-android,aliases-android}; do
     [ -r "$file" ] && source "$file"
 done
 unset file
@@ -29,3 +29,9 @@ shopt -s globstar 2> /dev/null
 if [ -f `brew --prefix`/etc/bash_completion ]; then
     . `brew --prefix`/etc/bash_completion
 fi
+
+# NVM
+export NVM_DIR=~/.nvm
+source ~/.nvm/nvm.sh
+eval "$(rbenv init -)"
+

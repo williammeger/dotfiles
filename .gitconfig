@@ -1,12 +1,16 @@
 [color]
-        ui = auto
+      ui = auto
 
 [alias]
-        df = diff --color --color-words --abbrev
-        lg = log --color --graph --abbrev-commit
-        pr = !sh -c \"git fetch origin pull/${1}/head:pr${1}\" -
-        rename = branch -m
-        hf = !sh -c \"git log --pretty=format: --name-only | sort | uniq -c | sort -rg | head -15\"
+      df = diff --color --color-words --abbrev
+      lg = log --color --graph --abbrev-commit
+      pr = !sh -c \"git fetch origin pull/${1}/head:pr${1}\" -
+      rename = branch -m
+      hf = !sh -c \"git log --pretty=format: --name-only | sort | uniq -c | sort -rg | head -15\"
 
 [fetch]
-        prune = true
+      prune = true
+[credential]
+	helper = osxkeychain
+[user]
+	email = william_meger@discovery.com

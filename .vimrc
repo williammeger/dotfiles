@@ -6,7 +6,7 @@
   set background=dark
   syntax on
   filetype on
-  colorscheme zenburn 
+  colorscheme night 
 " }}}
 
 " Setting things {{{

@@ -29,7 +29,7 @@ set_prompts() {
         orange=$(tput setaf 172)
         purple=$(tput setaf 139)
         red=$(tput setaf 196)
-        violet=$(tput setaf 61)
+        violet=$(tput setaf 67)
         magenta=$(tput setaf 9)
         white=$(tput setaf 8)
         yellow=$(tput setaf 185)
@@ -59,13 +59,13 @@ set_prompts() {
         if [[ "${USER}" == "*root" ]]; then
             userStyle="${red}";
         else
-            userStyle="${magenta}";
+            userStyle="${purple}";
         fi;
 
         userhost=""
         userhost+="\[${userStyle}\]$USER"
         userhost+="\[${white}\]@"
-        userhost+="\[${orange}\]\h"
+        userhost+="\[${violet}\]\h"
 
         echo $userhost
 
@@ -100,7 +100,7 @@ set_prompts() {
     PS1="\[\033]0;\w\007\]"                                   # terminal title (set to current dir)
     PS1+="\[$bold\]"
     PS1+="\[$(usernamehost)\]"                                # username at host
-    PS1+="\[$yellow\] \w"                                      # working directory
+    PS1+="\[$blue\] \w"                                      # working directory
     PS1+="\$(prompt_git \"$white on $purple\" \"$cyan\")"     # git repository details
 
     if [ "$SSH_CLIENT" ]; then text=" (ssh-session)"          # check if in ssh connection

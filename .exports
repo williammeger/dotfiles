@@ -5,11 +5,18 @@
 # vim as default
 export EDITOR="vim"
 
+# BAT [better cat]
+export BAT_THEME="zenburn"
+
 # Android
 export ANDROID_HOME=$HOME/Library/Android/sdk
 
+# FastLane
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+
 # Proxy
-PORT_NUMBER=:8888
+#PORT_NUMBER=:8888
 #export HTTP_PROXY=$(get_local_ip)$PORT_NUMBER 
 
 # Java

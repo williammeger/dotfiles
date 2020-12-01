@@ -1,0 +1,39 @@
+#!/bin/bash
+
+source $HOME/.exports
+
+# Build up the $PATH
+
+# required to prefix after brew upgrade to prevent system defaults from shadowing brew installs
+# https://github.com/Homebrew/homebrew-core/issues/15746
+
+PATH=$(brew --prefix)/opt/python/libexec/bin
+
+PATH=$PATH:/usr/local/bin
+PATH=$PATH:/usr/bin
+PATH=$PATH:/bin
+PATH=$PATH:/usr/sbin
+PATH=$PATH:/sbin
+
+# Configure Android
+
+ANDROID_EMULATOR=$ANDROID_HOME/tools
+ANDROID_SDK_TOOLS=$ANDROID_HOME/tools/bin
+ANDROID_SDK_BUILD_TOOLS=$ANDROID_HOME/build-tools
+ANDROID_SDK_MANAGER=$ANDROID_HOME/platform-tools
+
+PATH=$PATH:$ANDROID_HOME/emulator
+PATH=$PATH:$ANDROID_SDK_MANAGER
+PATH=$PATH:$ANDROID_EMULATOR
+PATH=$PATH:$ANDROID_SDK_BUILD_TOOLS
+PATH=$PATH:$ANDROID_SDK_TOOLS
+
+
+#PATH=$PATH:$JAVA9_HOME
+PATH=$PATH:$JAVA8_HOME
+PATH=$PATH:$JAVA7_HOME
+
+# VS Code 
+PATH="$PATH:/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
+
+export PATH
