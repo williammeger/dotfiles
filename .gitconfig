@@ -11,6 +11,5 @@
 [fetch]
       prune = true
 [credential]
-	helper = osxkeychain
-[user]
-	email = william_meger@discovery.com
+  helper = osxkeychain
+

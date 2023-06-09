@@ -5,9 +5,9 @@
 # backs up any local copies of .bashrc, .gitignore 
 # no more symlinking with --bare  :)
 
-git clone --bare https://github.com/williammeger/dotfiles.git $HOME/.dotfiles
+git clone --bare https://github.com/williammeger/dotfiles.git $HOME/.cfg
 function config {
-   /usr/local/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME $@
+   /usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME $@
 }
 mkdir -p .dotfiles-backup
 config checkout
