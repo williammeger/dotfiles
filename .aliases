@@ -14,16 +14,14 @@ alias ll="ls -al"
 alias cc="clear"
 alias -- -="cd -"
 
+# better PATH readability
+alias path="tr ':' '\n' <<< '$PATH'"
+
 # thanks to paul irish for these
 alias chmox='chmod -x'
 
-# colorize `cat` requires: sudo pip/easy_install -U Pygments
-alias ccat='pygmentize -O style=monokai,linenos=1 -f console256 -g'
-
-alias cask='brew cask'  
 alias where=which  
-alias brwe=brew  #typos
-alias abd=adb #android typos
+alias abd=adb # typos
 
 alias vi="/usr/local/bin/vim"
 
