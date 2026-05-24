@@ -1,21 +1,47 @@
 #!/bin/bash
-# awesome install script by Nicola Paolucci
-# https://bitbucket.org/durdn/cfg
+set -e
 
-# backs up any local copies of .bashrc, .gitignore 
-# no more symlinking with --bare  :)
+REPO="https://github.com/williammeger/dotfiles.git"
+CFG_DIR="$HOME/.cfg"
+BACKUP_DIR="$HOME/.dotfiles-backup"
 
-git clone --bare https://github.com/williammeger/dotfiles.git $HOME/.cfg
 function config {
-   /usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME $@
+  /usr/bin/git --git-dir="$CFG_DIR" --work-tree="$HOME" "$@"
 }
-mkdir -p .dotfiles-backup
-config checkout
-if [ $? = 0 ]; then
-  echo "Checked out config.";
-  else
-    echo "Backing up pre-existing dot files.";
-    config checkout 2>&1 | egrep "\s+\." | awk {'print $1'} | xargs -I{} mv {} .dotfiles-backup/{}
-fi;
+
+# Preflight: Homebrew
+if ! command -v brew &>/dev/null; then
+  echo "⚠️  Homebrew not found. Install it first:"
+  echo '    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+  exit 1
+fi
+
+# Preflight: avoid re-running on existing install
+if [ -d "$CFG_DIR" ]; then
+  echo "⚠️  $CFG_DIR already exists. To reinstall, remove it first: rm -rf $CFG_DIR"
+  exit 1
+fi
+
+# Ensure .cfg is ignored before cloning
+grep -qxF ".cfg" "$HOME/.gitignore" 2>/dev/null || echo ".cfg" >> "$HOME/.gitignore"
+
+# Clone
+echo "→ Cloning dotfiles..."
+git clone --bare "$REPO" "$CFG_DIR"
+
+# Attempt checkout — back up any conflicting files first
+mkdir -p "$BACKUP_DIR"
+CONFLICTS=$(config checkout 2>&1 | grep -E "\s+\." | awk '{print $1}')
+
+if [ -n "$CONFLICTS" ]; then
+  echo "→ Backing up conflicting files to $BACKUP_DIR..."
+  echo "$CONFLICTS" | xargs -I{} sh -c 'mkdir -p "'"$BACKUP_DIR"'/$(dirname {})" && mv "$HOME/{}" "'"$BACKUP_DIR"'/{}"'
+fi
+
 config checkout
 config config status.showUntrackedFiles no
+
+echo ""
+echo "✅ Dotfiles installed."
+[ -n "$CONFLICTS" ] && echo "   Pre-existing files backed up to: $BACKUP_DIR"
+echo "   Reload your shell or run: source ~/.zshrc"
