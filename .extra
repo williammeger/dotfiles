@@ -1,12 +1,14 @@
-source $HOME/.exports
+# Detect Homebrew prefix (Apple Silicon: /opt/homebrew, Intel: /usr/local)
+BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
 
 # Build up the $PATH
-
+PATH=$PATH:$BREW_PREFIX/lib
 PATH=$PATH:/usr/local/bin
 PATH=$PATH:/usr/bin
 PATH=$PATH:/bin
 PATH=$PATH:/usr/sbin
 PATH=$PATH:/sbin
+
 
 # Configure Android
 
@@ -21,7 +23,15 @@ PATH=$PATH:$ANDROID_EMULATOR
 PATH=$PATH:$ANDROID_SDK_BUILD_TOOLS
 PATH=$PATH:$ANDROID_SDK_TOOLS
 
-# VS Code 
-PATH="$PATH:/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
+# VS Code — resolve via symlink if installed, fall back to default app path
+VSCODE_BIN="$(command -v code 2>/dev/null)"
+if [ -z "$VSCODE_BIN" ]; then
+  VSCODE_APP_BIN="/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
+  [ -d "$VSCODE_APP_BIN" ] && PATH="$PATH:$VSCODE_APP_BIN"
+fi
+
+# gnu-sed (Homebrew)
+GNU_SED_BIN="$BREW_PREFIX/opt/gnu-sed/libexec/gnubin"
+[ -d "$GNU_SED_BIN" ] && PATH="$GNU_SED_BIN:$PATH"
 
 export PATH

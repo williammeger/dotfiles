@@ -21,8 +21,6 @@ alias path="tr ':' '\n' <<< '$PATH'"
 alias chmox='chmod -x'
 
 alias where=which  
-alias abd=adb # typos
-
 alias vi="/usr/local/bin/vim"
 
 # dotfiles under git no more symlinks !
@@ -30,6 +28,7 @@ alias vi="/usr/local/bin/vim"
 # https://developer.atlassian.com/blog/2016/02/best-way-to-store-dotfiles-git-bare-repo/
 alias config="/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME"
 
-# android tools
-# needs proper android env configuration in .extras
-alias avds="emulator -list-avds"
+# homebrew
+alias brewup='brew update && brew upgrade'
+
+alias abd=adb # typos

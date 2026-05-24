@@ -6,10 +6,15 @@
       lg = log --color --graph --abbrev-commit
       pr = !sh -c \"git fetch origin pull/${1}/head:pr${1}\" -
       rename = branch -m
-      hf = !sh -c \"git log --pretty=format: --name-only | sort | uniq -c | sort -rg | head -15\"
+  hf = !sh -c \"git log --pretty=format: --name-only | sort | uniq -c | sort -rg | head -15\"
+  jira-log = "!f() { A=$1; B=${2-HEAD}; git fetch origin; git log $A..$B --pretty=format:'%H%n%B%x0C' | tr -d \"\\r\" | perl -e '$/ = \"\\f\"; print \"||SHA||Summary||Issue ID||\\n\"; while(<>) { /\\s*(\\w+)\\s+([^\\n]+).*jira: ([^\\n]+)/si; my $string = substr($1, 0, 8); print \"| $string | $2 | $3 |\\n\"};';}; f"
 
-[fetch]
-      prune = true
 [credential]
   helper = osxkeychain
 
+[user]
+	name = William Meger
+	email = william.meger@crunchyroll.com
+
+[includeIf "gitdir:~/.cfg/"]
+    path = ~/.gitconfig.personal

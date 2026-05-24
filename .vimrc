@@ -3,10 +3,9 @@
 
 " Syntax highlighting {{{
   set t_Co=256
-  set background=dark
+  set background=light
   syntax on
   filetype on
-  colorscheme night 
 " }}}
 
 " Setting things {{{
@@ -121,7 +120,6 @@ augroup END
 " Load plugins {{{
 call plug#begin('~/.vim/plugged')
 
-Plug 'ap/vim-css-color'
 Plug 'bling/vim-airline'
 Plug 'vim-airline/vim-airline-themes'
 Plug 'bling/vim-bufferline'
@@ -134,3 +132,4 @@ Plug 'tpope/vim-fugitive'
 
 call plug#end()
 " }}}
+"
