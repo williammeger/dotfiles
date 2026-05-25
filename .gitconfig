@@ -14,7 +14,7 @@
 
 [user]
 	name = William Meger
-	email = william.meger@crunchyroll.com
+	email = wmeger14@gmail.com
 
-[includeIf "gitdir:~/.cfg/"]
-    path = ~/.gitconfig.personal
+[includeIf "gitdir:~/dev/"]
+    path = ~/.gitconfig.work
