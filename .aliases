@@ -78,3 +78,8 @@ adb-screenshot() {
   local filename="${prefix}_$(printf '%03d' $n).png"
   command adb exec-out screencap -p > "$filename" && echo "Screenshot saved: $filename"
 }
+
+# ── tmux ───────────────────────────────────────────────────────────────────────
+alias tl="tmux ls"                          # list sessions
+alias ta="tmux a"                           # attach to last session
+alias tn="tmux new -A -s"                   # attach-or-create named session: tn <name>
