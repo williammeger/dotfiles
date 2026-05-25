@@ -24,11 +24,15 @@ center() {
   printf '%b\n' "$1"
 }
 
-rline() { printf '%*s\n' "$W" '' | tr ' ' "${1:- }"; }
+rline() {
+  printf '%b' "$(fg $C_ORANGE)"
+  printf '%.0s─' $(seq 1 $W)
+  printf '%b\n' "${reset}"
+}
 
 section() {
   echo
-  center "$(fg $C_ORANGE)${bold}── $1 ──${reset}"
+  printf '%b%b  ── %s %b\n' "$(fg $C_ORANGE)" "${bold}" "$1" "${reset}"
   echo
 }
 
