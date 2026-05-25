@@ -117,3 +117,20 @@ export SDKMAN_DIR="$HOME/.sdkman"
 # Created by `pipx` on 2025-05-19 15:14:45
 export PATH="$PATH:/Users/wiliammeger/.local/bin"
 # asdf shims managed by oh-my-zsh asdf plugin (plugins line above)
+
+# ── adb tab completion ─────────────────────────────────────────────────────────
+# Surfaces custom subcommands alongside built-in adb completions.
+# Registered for both `adb` and `abd`.
+_adb_completion() {
+  local -a custom_subcmds
+  custom_subcmds=(
+    'screenshot:capture device screenshot — branch_yyyy_mm_dd_001.png'
+    'purge:clear /storage/emulated/0/Download on device'
+    'proxy:open FireTV SSM network proxy control panel'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'custom subcommands' custom_subcmds
+  fi
+}
+compdef _adb_completion adb abd

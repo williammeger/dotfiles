@@ -32,3 +32,49 @@ alias config="/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME"
 alias brewup='brew update && brew upgrade'
 
 alias abd=adb # typos
+
+# ── Android tools ──────────────────────────────────────────────────────────────
+#
+# adb is wrapped as a function to extend it with custom subcommands.
+# All unrecognised subcommands pass through to the real adb binary via `command`.
+# Tab completion is registered in ~/.zshrc.
+#
+# Custom subcommands:
+#   adb screenshot  — capture device screenshot with branch-prefixed numbering
+#   adb purge       — clear device Downloads directory
+#   adb proxy       — open FireTV SSM network proxy control panel
+adb() {
+  case "$1" in
+    screenshot) shift; adb-screenshot "$@" ;;
+    purge)      command adb shell rm -rf /storage/emulated/0/Download && echo "Downloads cleared" ;;
+    proxy)      command adb shell am start com.amazon.ssm/com.amazon.ssm.ControlPanel ;;
+    *)          command adb "$@" ;;
+  esac
+}
+
+# adb-screenshot
+# Captures a screenshot from the connected device, saved to the current directory.
+#
+# Filename format: <branch>_<yyyy_mm_dd>_<seq>.png
+#   e.g. feat-offline-mode_2026_05_24_001.png
+#
+# Branch slashes are replaced with dashes (feat/x → feat-x).
+# Sequential counter resets each day — no collisions across sessions.
+# Falls back to "screenshot" prefix outside of a git repo.
+adb-screenshot() {
+  local branch
+  branch=$(git branch --show-current 2>/dev/null | sed 's/[^a-zA-Z0-9]/-/g')
+  [ -z "$branch" ] && branch="screenshot"
+
+  local today
+  today=$(date +%Y_%m_%d)
+
+  local prefix="${branch}_${today}"
+  local n=1
+  while [ -f "${prefix}_$(printf '%03d' $n).png" ]; do
+    n=$((n + 1))
+  done
+
+  local filename="${prefix}_$(printf '%03d' $n).png"
+  command adb exec-out screencap -p > "$filename" && echo "Screenshot saved: $filename"
+}
