@@ -11,3 +11,112 @@ parse_git_branch() {
 get_local_ip() {
   echo $(ipconfig getifaddr en0)
 }
+
+# ── Git Worktrees ──────────────────────────────────────────────────────────────
+#
+# Worktrees let you check out multiple branches simultaneously into separate
+# directories. Each directory is fully independent — edits, builds, and tools
+# (e.g. Android Studio) in one tree are completely unaffected by work in another.
+#
+# Typical workflow:
+#   1. Start work normally in your main repo directory
+#   2. Identify work that can be parallelized across agents
+#   3. Run `wtadd <branch>` for each parallel workstream
+#   4. Point each agent at its worktree path
+#   5. When done, `wtrm <branch>` to clean up
+#
+# Worktrees are created as siblings of the repo root:
+#   ~/Development/repo-name/          ← main tree (Android Studio stays here)
+#   ~/Development/repo-name-feat-x/   ← agent worktree for feat/x
+#   ~/Development/repo-name-feat-y/   ← agent worktree for feat/y
+# ──────────────────────────────────────────────────────────────────────────────
+
+# wtadd <branch-name> [base-branch]
+#
+# Creates a new git worktree at a sibling directory and checks out a new branch.
+# The worktree path is derived from the repo name and branch name automatically.
+#
+# Arguments:
+#   branch-name   Name of the new branch to create (required)
+#   base-branch   Branch to base it on — defaults to current branch if omitted
+#
+# Example:
+#   wtadd feat/offline-mode           # branch from current branch
+#   wtadd feat/offline-mode main      # branch from main
+#
+# Output: prints the worktree path so you can cd or hand it to an agent
+wtadd() {
+  if [ -z "$1" ]; then
+    echo "Usage: wtadd <branch-name> [base-branch]"
+    return 1
+  fi
+
+  local branch="$1"
+  local base="${2:-HEAD}"
+  local repo_root
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
+
+  if [ -z "$repo_root" ]; then
+    echo "Error: not inside a git repository"
+    return 1
+  fi
+
+  local repo_name
+  repo_name=$(basename "$repo_root")
+
+  # Replace / with - so branch names like feat/x become repo-name-feat-x
+  local safe_branch="${branch//\//-}"
+  local worktree_path="$(dirname "$repo_root")/${repo_name}-${safe_branch}"
+
+  git worktree add -b "$branch" "$worktree_path" "$base" || return 1
+
+  echo ""
+  echo "  Worktree : $worktree_path"
+  echo "  Branch   : $branch"
+  echo "  Based on : $(git rev-parse --abbrev-ref "$base" 2>/dev/null || echo "$base")"
+  echo ""
+  echo "  cd $worktree_path"
+}
+
+# wtls
+#
+# Lists all active worktrees for the current repo with their branch and path.
+wtls() {
+  git worktree list
+}
+
+# wtrm <branch-name>
+#
+# Removes the worktree for the given branch and deletes the local branch.
+# Uses the same path convention as wtadd — branch name maps to sibling directory.
+#
+# Example:
+#   wtrm feat/offline-mode
+wtrm() {
+  if [ -z "$1" ]; then
+    echo "Usage: wtrm <branch-name>"
+    return 1
+  fi
+
+  local branch="$1"
+  local repo_root
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
+
+  if [ -z "$repo_root" ]; then
+    echo "Error: not inside a git repository"
+    return 1
+  fi
+
+  local repo_name
+  repo_name=$(basename "$repo_root")
+  local safe_branch="${branch//\//-}"
+  local worktree_path="$(dirname "$repo_root")/${repo_name}-${safe_branch}"
+
+  if [ ! -d "$worktree_path" ]; then
+    echo "Error: worktree not found at $worktree_path"
+    return 1
+  fi
+
+  git worktree remove "$worktree_path" && git branch -d "$branch"
+  echo "Removed worktree and branch: $branch"
+}
