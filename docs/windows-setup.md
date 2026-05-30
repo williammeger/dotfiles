@@ -534,7 +534,6 @@ $wingetApps = @(
     'Ollama.Ollama'
     'LMStudio.LMStudio'
     'Microsoft.VisualStudioCode'
-    'Docker.DockerDesktop'
     'KhronosGroup.VulkanSDK'
     'Microsoft.VisualStudio.2022.BuildTools'
     'BaldurKarlsson.RenderDoc'
@@ -1360,17 +1359,16 @@ Open WebUI gives you a ChatGPT-like experience in your browser, backed by your
 local Ollama models. It adds features like file uploads, conversation history,
 and the ability to ask questions about uploaded documents (PDFs, code files).
 
-**Prerequisites:** Docker Desktop must be installed and running (it's installed
-by `bootstrap/windows.ps1`). Docker is a tool that runs apps in isolated
-containers — think of it as a lightweight VM for server applications.
+**Prerequisites:** Docker must be available inside WSL2 (installed by
+`bootstrap/linux.sh` — see section 8). Docker is a tool that runs apps in
+isolated containers — think of it as a lightweight VM for server applications.
 
-```powershell
-# Open PowerShell and run this single command:
-docker run -d -p 3000:8080 `
-  --gpus all `
-  --add-host=host.docker.internal:host-gateway `
-  -v open-webui:/app/backend/data `
-  --name open-webui --restart always `
+```bash
+# Run from WSL2 terminal:
+docker run -d -p 3000:8080 \
+  --gpus all \
+  -v open-webui:/app/backend/data \
+  --name open-webui --restart always \
   ghcr.io/open-webui/open-webui:cuda
 ```
 
@@ -1383,7 +1381,7 @@ docker run -d -p 3000:8080 `
 2. Create an admin account — this is local-only, never leaves your machine,
    no email verification. Just pick a username and password.
 3. Go to **Settings → Connections** (gear icon, top-right):
-   - Set Ollama URL to: `http://host.docker.internal:11434`
+   - Set Ollama URL to: `http://localhost:11434`
    - Click **Verify** — should show a green checkmark ✓
 4. Go back to the chat view — all your Ollama models now appear in the
    model dropdown at the top
@@ -1512,7 +1510,7 @@ curl -s http://$OLLAMA_HOST/api/generate -d '{
 |---|---|---|
 | Ollama | ✅ Windows service, auto-start on boot | `ollama run`, API at `:11434` |
 | LM Studio | ❌ Launch manually when needed | GUI app, server at `:1234` when started |
-| Open WebUI | ✅ Docker `--restart always` | Browser at `http://localhost:3000` |
+| Open WebUI | ✅ Docker `--restart always` (WSL2) | Browser at `http://localhost:3000` |
 | Continue.dev | ✅ VS Code extension, always active | `Ctrl+Shift+L` in VS Code |
 
 **On a fresh boot, your LLM stack is:**
@@ -1523,7 +1521,307 @@ curl -s http://$OLLAMA_HOST/api/generate -d '{
 
 ---
 
-## 8 — Full Workflow: From Zero to Working
+## 8 — Containerized Agent Runtime
+
+### 8.1 Why Containerize Agents?
+
+AI agents are programs that use LLMs to reason and then take actions — running
+code, browsing files, calling APIs, installing packages. Running them directly
+on your host machine is risky: a misconfigured agent could delete files, install
+malware, or leak data. Containers solve this by giving each agent an isolated
+Linux environment with controlled access to your filesystem, network, and GPU.
+
+**Benefits:**
+- **Isolation** — agents can't accidentally break your host system
+- **Reproducibility** — same container image works identically on desktop and laptop
+- **GPU access** — containers can still use your NVIDIA GPU for inference
+- **Disposability** — destroy and recreate agent environments in seconds
+- **Multiple agents** — run several agents simultaneously without conflicts
+
+### 8.2 Container Runtime: Colima
+
+[Colima](https://github.com/abiosoft/colima) is a lightweight container runtime
+that wraps Docker/containerd with minimal overhead. It supports GPU-accelerated
+containers and multiple isolated instances.
+
+**Platform strategy:**
+
+| Platform | Container Runtime | Notes |
+|---|---|---|
+| macOS | Colima (`brew install colima`) | Replaces Docker Desktop, lightweight |
+| WSL2 (Desktop, 128 GB) | Colima via mise | Nested virt enabled in `.wslconfig` |
+| WSL2 (Laptop, 64 GB) | Docker Engine directly | Avoids nested virt overhead |
+
+> **Why not Docker Desktop on Windows?** Docker Desktop uses WSL2 as its backend
+> anyway, but adds a Windows GUI layer, licensing restrictions for commercial use,
+> and higher memory overhead. Colima (or raw Docker Engine) inside WSL2 is lighter.
+
+#### Install Colima in WSL2 (Desktop tier — nested virt enabled)
+
+```bash
+# mise (already installed by bootstrap/linux.sh)
+mise use -g colima@latest
+
+# Also need docker CLI (client only, no daemon)
+sudo apt-get install -y docker.io docker-compose-v2
+
+# Start Colima with generous resources for agent workloads
+colima start --cpu 6 --memory 16 --disk 50 --runtime docker
+
+# Verify
+docker run --rm hello-world
+```
+
+#### Install Docker Engine in WSL2 (Laptop tier — or as fallback)
+
+If nested virtualization isn't available or Colima has issues, use Docker Engine
+directly. This is the lightest option since containers are native Linux syscalls
+inside WSL2 — no VM layer at all.
+
+```bash
+# Install Docker Engine (not Docker Desktop)
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+
+# Add yourself to the docker group (avoids sudo for every command)
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Start the Docker daemon
+sudo service docker start
+
+# Make it start on WSL2 boot (add to your .zshrc or env-local)
+echo 'sudo service docker start 2>/dev/null' >> ~/platform/linux/env-local
+
+# Verify
+docker run --rm hello-world
+```
+
+#### NVIDIA GPU Access in Containers
+
+Both Colima and Docker Engine can pass your GPU into containers for inference:
+
+```bash
+# Install NVIDIA Container Toolkit (allows GPU in Docker containers)
+# This is a one-time setup
+distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L "https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list" | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker  # or: sudo service docker restart
+
+# Test GPU access in a container
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+```
+
+> **Expected output:** You should see your GPU listed (RTX 3070 on laptop, or
+> whatever the desktop has). If you see "no NVIDIA GPU detected," the NVIDIA
+> Container Toolkit isn't installed correctly — re-run the steps above.
+
+### 8.3 Running Containerized Agents
+
+#### Example: Sandboxed Code Execution Agent
+
+Run a container that has access to Ollama (on the host) but is sandboxed from
+your filesystem:
+
+```bash
+# Create a workspace the agent can use (and you can inspect)
+mkdir -p ~/agent-workspace
+
+# Run an interactive container with:
+#   --gpus all         → GPU access for local inference
+#   -v mount           → only the workspace dir is visible, not your whole home
+#   --network host     → can reach Ollama at localhost:11434
+docker run -it --rm \
+  --gpus all \
+  --network host \
+  -v ~/agent-workspace:/workspace \
+  -e OLLAMA_HOST=http://localhost:11434 \
+  python:3.12-slim bash
+```
+
+Inside the container, install the `ollama` Python library and build an agent:
+
+```bash
+pip install ollama
+python3 -c "
+import ollama
+resp = ollama.chat(model='qwen2.5-coder:32b', messages=[
+    {'role': 'user', 'content': 'Write a Python script that generates a Mandelbrot fractal PNG'}
+])
+print(resp['message']['content'])
+"
+```
+
+The agent can write files to `/workspace` — which maps to `~/agent-workspace`
+on your host. It cannot see or modify anything else.
+
+#### Example: Open Interpreter in a Container
+
+[Open Interpreter](https://github.com/OpenInterpreter/open-interpreter) is an
+agent that writes and executes code based on natural language instructions.
+Running it in a container keeps it from touching your real files:
+
+```bash
+docker run -it --rm \
+  --gpus all \
+  --network host \
+  -v ~/agent-workspace:/workspace \
+  -w /workspace \
+  python:3.12-slim bash -c "
+    pip install open-interpreter &&
+    interpreter --local --model ollama/qwen2.5-coder:32b
+  "
+```
+
+#### Example: Persistent Agent Environment (Dockerfile)
+
+For a reusable agent setup, create a Dockerfile:
+
+```dockerfile
+# ~/agent-workspace/Dockerfile
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir \
+    ollama \
+    open-interpreter \
+    requests \
+    numpy \
+    matplotlib
+
+# Agent runs as non-root for safety
+RUN useradd -m agent
+USER agent
+WORKDIR /workspace
+
+CMD ["bash"]
+```
+
+Build and run:
+
+```bash
+cd ~/agent-workspace
+docker build -t local-agent .
+
+# Interactive session
+docker run -it --rm --gpus all --network host \
+  -v ~/agent-workspace:/workspace \
+  local-agent
+
+# Or run a one-shot task
+docker run --rm --gpus all --network host \
+  -v ~/agent-workspace:/workspace \
+  local-agent python3 /workspace/my-agent-script.py
+```
+
+### 8.4 Multiple Colima Instances (Desktop Tier)
+
+Colima supports named instances — useful for isolating different agent workloads:
+
+```bash
+# Default instance for general containers
+colima start --cpu 4 --memory 8 --disk 30
+
+# Separate instance for heavy agent work (more resources)
+colima start --profile agents --cpu 8 --memory 24 --disk 50
+
+# Switch between them
+colima list
+export DOCKER_HOST="unix://$HOME/.colima/agents/docker.sock"
+
+# Stop a specific instance
+colima stop --profile agents
+```
+
+### 8.5 Colima on macOS (for your existing machine)
+
+If you want the same containerized agent workflow on your macOS machine:
+
+```bash
+# Install
+brew install colima docker
+
+# Start with Docker runtime
+colima start --cpu 4 --memory 8 --disk 50
+
+# GPU-accelerated AI containers (Apple Silicon, macOS 13+, Colima v0.10+)
+# Requires krunkit: https://github.com/containers/krunkit#installation
+colima start --runtime docker --vm-type krunkit
+
+# Run models directly through Colima
+colima model run gemma3
+colima model run llama3.2
+```
+
+Add to `platform/macos/env-local`:
+```bash
+# Start Colima on shell init if not already running
+if ! colima status &>/dev/null; then
+  colima start --cpu 4 --memory 8 --disk 50 2>/dev/null &
+fi
+```
+
+### 8.6 Bootstrap Integration
+
+Add the following to `bootstrap/linux.sh` (WSL2 setup):
+
+```bash
+# ─── Container Runtime ────────────────────────────────────────────────────────
+echo "[X/10] Setting up container runtime..."
+
+if [[ "$TIER" == "desktop" ]]; then
+  # Desktop: Colima (nested virt available)
+  mise use -g colima@latest
+  sudo apt-get install -y docker.io docker-compose-v2 2>/dev/null
+else
+  # Laptop: Docker Engine directly (lighter)
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-v2 2>/dev/null
+  sudo usermod -aG docker "$USER"
+  sudo service docker start
+fi
+
+# NVIDIA Container Toolkit (both tiers)
+if command -v nvidia-smi &>/dev/null; then
+  distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
+  curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+    sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null
+  curl -s -L "https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list" | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+  sudo apt-get update -qq
+  sudo apt-get install -y nvidia-container-toolkit
+  sudo nvidia-ctk runtime configure --runtime=docker
+fi
+```
+
+### 8.7 Removing Docker Desktop
+
+Since containers now run inside WSL2 (via Colima or Docker Engine), Docker
+Desktop on Windows is no longer needed. It can be removed from the winget
+install list in `bootstrap/windows.ps1` to save resources.
+
+The Open WebUI container (section 7.5) will run inside WSL2 instead:
+
+```bash
+# Run Open WebUI inside WSL2 (replaces the Windows Docker Desktop version)
+docker run -d -p 3000:8080 \
+  --gpus all \
+  --add-host=host.docker.internal:host-gateway \
+  -v open-webui:/app/backend/data \
+  --name open-webui --restart always \
+  ghcr.io/open-webui/open-webui:cuda
+```
+
+Access remains the same: `http://localhost:3000` in your Windows browser.
+
+---
+
+## 9 — Full Workflow: From Zero to Working
 
 ### 8.1 On macOS (preparation — run once)
 
@@ -1587,7 +1885,7 @@ differences are:
 
 ---
 
-## 9 — Verification Checklist
+## 10 — Verification Checklist
 
 ```bash
 # ── Shell ──────────────────────────────────────────────────────────────────
@@ -1618,12 +1916,16 @@ dxc /help                    # → Windows SDK HLSL compiler
 # ── LLM ────────────────────────────────────────────────────────────────────
 ollama list                  # → shows pulled models
 ai "hello"                   # → response from LLM via WSL2 bridge
-curl http://localhost:3000   # → Open WebUI running (if Docker started)
+curl http://localhost:3000   # → Open WebUI running
+
+# ── Containers ─────────────────────────────────────────────────────────────
+docker run --rm hello-world  # → container runtime working
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi  # → GPU in containers
 ```
 
 ---
 
-## 10 — Platform Isolation Summary
+## 11 — Platform Isolation Summary
 
 | What | macOS gets | Windows/WSL2 gets | Neither gets |
 |---|---|---|---|
