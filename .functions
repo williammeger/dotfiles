@@ -85,6 +85,20 @@ wtls() {
   git worktree list
 }
 
+# studio
+#
+# Opens a new Android Studio instance scoped to the android/ module of the
+# current git worktree. Works from any subdirectory — no need to be at the root.
+# Falls back to $PWD/android when run outside a git repo.
+#
+# Example:
+#   cd ~/Development/cr-android-app-feat-x && studio
+studio() {
+  local root
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
+  open -na "Android Studio.app" --args "${root}/android"
+}
+
 # wtrm <branch-name>
 #
 # Removes the worktree for the given branch and deletes the local branch.
