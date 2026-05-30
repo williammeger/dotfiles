@@ -1119,23 +1119,106 @@ cloud services, no telemetry. Your prompts and code never leave your machine.
 | C: | NVMe | 2 TB | OS + programs only |
 | D: | SSD | 8 TB | Creative work (art, music projects) |
 | E: | SSD | 1–2 TB | After Effects disk cache |
-| G: | HDD | 8 TB | Bulk storage — **LLM models go here** |
+| G: | HDD | 8 TB | Bulk storage — **LLM models (default)** |
 
-**Why G: works for models:** LLM files are write-once (downloaded once, never
-modified) and read-sequentially (loaded straight into RAM on launch). Once a
-model is in memory, disk speed is irrelevant — all inference runs from RAM.
-The only tradeoff is cold-start time:
+#### Default: G: (HDD) — Recommended
 
-| Model size | HDD load time | NVMe load time |
+LLM files are write-once (downloaded once, never modified) and loaded
+sequentially into RAM on launch. Once a model is in memory, disk speed is
+irrelevant — all inference runs from RAM/VRAM, zero disk I/O.
+
+The tradeoff is cold-start time (model load from disk → RAM):
+
+| Model size | G: HDD (~180 MB/s) | C: NVMe (~3500 MB/s) |
 |---|---|---|
-| 5 GB (7B) | ~8–12s | ~2s |
-| 20 GB (32B) | ~30–45s | ~8s |
-| 40 GB (70B) | ~50–70s | ~15s |
+| 5 GB (7B) | ~28s | ~1.5s |
+| 20 GB (32B) | ~110s (~2 min) | ~6s |
+| 40 GB (70B) | **~220s (~3.5 min)** | ~12s |
 
-This is acceptable for a manual-launch workflow — you start Ollama, wait a
-minute for the model to warm up, then work uninterrupted.
+This is a one-time cost per session. Once loaded, model response speed is
+identical regardless of which drive the file lives on. The manual-launch
+workflow (start Ollama → wait → work uninterrupted) makes this acceptable.
 
-**Configuration:**
+**Why G: is the better default:**
+- Zero impact on OS drive performance
+- No I/O contention during memory pressure (creative apps fighting with model page faults)
+- C: stays clean for OS + programs — drive failure only requires reinstalling Windows
+- Models are re-downloadable (no irreplaceable data)
+
+#### Alternative: C: (NVMe) — Fast Cold Start
+
+If the 3-4 minute HDD load becomes annoying (e.g., you frequently switch
+models or start/stop Ollama multiple times a day), you can move models to C:.
+
+**Tradeoffs to understand:**
+
+| | G: HDD | C: NVMe |
+|---|---|---|
+| Cold start (70B) | ~3.5 min | ~12s |
+| Disk I/O during inference | None | None |
+| Disk I/O under memory pressure | None (model evicted, next query re-loads from G:) | Random reads on C: as OS re-faults evicted pages — competes with system I/O |
+| OS performance impact | Zero | Brief during cold load; potential micro-stutters under RAM pressure |
+| Drive failure consequence | Re-download models | Re-download models + rebuilding OS/apps on same event |
+| Space used | N/A (8 TB) | ~150 GB of 2 TB |
+
+**The memory pressure scenario (why C: has a hidden cost):**
+Ollama uses `mmap()` to map model files. Under memory pressure (e.g., After
+Effects grabs 50 GB), the OS evicts model pages from RAM. When you next query
+the model, the OS re-reads those pages from disk via page faults. On C:, this
+creates random read I/O on your system drive during exactly the moments the
+system is already stressed — both the creative app and the model response stutter.
+On G:, the same scenario causes the model to respond slowly (HDD random reads),
+but the OS drive is unaffected.
+
+**How to switch to C: if you decide to:**
+
+```powershell
+# Move models from G: to C:
+# 1. Stop Ollama first
+Stop-Process -Name ollama -Force -ErrorAction SilentlyContinue
+
+# 2. Create the new directory
+New-Item -ItemType Directory -Path "C:\ollama\models" -Force
+
+# 3. Copy existing models (this takes a while for 100+ GB)
+robocopy "G:\ollama\models" "C:\ollama\models" /E /MT:8
+
+# 4. Update the environment variable
+[Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "C:\ollama\models", "User")
+
+# 5. Restart Ollama — it now reads from C:
+Start-Process ollama -ArgumentList "serve" -WindowStyle Hidden
+
+# 6. Verify models are visible
+ollama list
+
+# 7. (Optional) Delete old copy from G: to free space
+# Only after confirming ollama list shows everything:
+# Remove-Item "G:\ollama\models" -Recurse -Force
+```
+
+**To switch back to G::**
+```powershell
+[Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "G:\ollama\models", "User")
+# Restart Ollama
+```
+
+**LM Studio:** Settings → My Models → change path to `C:\lmstudio\models`
+(or back to `G:\lmstudio\models`).
+
+**Hybrid approach (best of both):**
+Keep frequently-used small models on C: for instant loads, large models on G:
+for occasional use. Ollama doesn't natively support split storage, but you can
+symlink individual model blobs:
+```powershell
+# Example: keep 7B on C:, large models on G:
+# This is advanced — only do this if cold start time really bothers you
+# and you don't want ALL models on C:
+```
+In practice, just pick one location. The simplicity of a single `OLLAMA_MODELS`
+path outweighs the marginal gain from splitting.
+
+**Configuration (default — G: drive):**
 
 ```powershell
 # Tell Ollama to store models on G: (set once, persists)
@@ -1156,8 +1239,7 @@ G:\
 
 **Important:** Do NOT put models on D: (creative SSD). That drive should stay
 clear for sample libraries, project files, and render outputs where random I/O
-performance matters. Models are sequential-read blobs that don't benefit from
-SSD speed once loaded.
+performance matters.
 
 ### 7.1 Hardware-Tiered Model Recommendations
 
