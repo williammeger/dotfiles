@@ -96,7 +96,7 @@ wtls() {
 studio() {
   local root
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
-  open -na "Android Studio.app" --args "${root}/android"
+  open -na "Android Studio.app" --args "${root}"
 }
 
 # wtrm <branch-name>

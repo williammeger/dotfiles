@@ -1,0 +1,5 @@
+#!/bin/sh
+# Opens a new Android Studio instance scoped to the android/ module of the
+# current git worktree. Works from any subdirectory of the repo.
+root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
+open -na "Android Studio.app" --args "${root}"
