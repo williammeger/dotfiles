@@ -19,7 +19,7 @@ development dependencies are included.
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Windows 11 (native)                                                  │
 │  ┌──────────────────────────────────────────────────────────────────┐│
-│  │ WezTerm • Ollama • VS Code • Blender • Engines • RenderDoc      ││
+│  │ WezTerm • Ollama • VS Code • RenderDoc                          ││
 │  └──────────────────────────────────────────────────────────────────┘│
 │                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────┐│
@@ -57,7 +57,7 @@ development dependencies are included.
 │   │   └── env-local        # macOS-only env vars
 │   │
 │   ├── linux/
-│   │   ├── extra            # Linux PATH, credential helper, locale
+│   │   ├── extra            # Linux PATH, locale
 │   │   ├── aliases-local    # Linux-only: ls --color, clip.exe, sysup
 │   │   └── env-local        # Linux-only env vars (OLLAMA_HOST, WSL bridges)
 │   │
@@ -132,6 +132,77 @@ unset _platform file
 
 This replaces the current `.{extra,exports,aliases,env-local,functions,env-android,aliases-android}` loop.
 
+### 1.4 Safe Rollout Order (macOS)
+
+The generator and `.zshrc` rewrite are separate steps. Do them in this order
+to avoid breaking your working macOS shell:
+
+**Phase A — Dry run (zero risk):**
+```bash
+chmod +x ~/bootstrap/generate.sh
+~/bootstrap/generate.sh --tier desktop --dry-run
+```
+This writes to `/tmp/`, validates all output, diffs against your live `~/.extra`,
+and exits without touching `~/platform/`. Review everything it prints.
+
+**Phase B — Verify generated output matches current state:**
+```bash
+# Inspect the staged output from the dry run
+cat /tmp/dotfiles-generate.*/platform/macos/extra
+
+# If satisfied, apply:
+~/bootstrap/generate.sh --tier desktop --apply
+```
+If anything is missing, edit the generator heredoc before applying.
+
+**Phase C — Test the new sourcing loop in isolation:**
+```bash
+# Spawn a throwaway subshell that sources the new way
+zsh -c '
+  _platform="macos"
+  for file in ~/.{exports,aliases,functions}; do [[ -r "$file" ]] && source "$file"; done
+  for file in ~/platform/${_platform}/{extra,aliases-local,env-local}; do [[ -r "$file" ]] && source "$file"; done
+  echo "PATH=$PATH"
+  which brew vim code
+'
+```
+If that prints sane output, you're safe to proceed.
+
+**Phase D — Swap `.zshrc` (one atomic commit):**
+```bash
+# Back up current .zshrc
+config stash  # or: cp ~/.zshrc ~/.zshrc.bak
+
+# Apply the new sourcing loop (§1.3)
+# Edit ~/.zshrc — replace the old `for file in ~/.{extra,...}` block
+
+# Commit the platform files + .zshrc together
+config add platform/ .zshrc
+config commit -m 'Add multi-platform sourcing with platform/ directory'
+```
+
+**Phase E — Confirm in a new terminal:**
+Open a fresh terminal tab. If your prompt, PATH, aliases all work → done.
+If broken:
+```bash
+# Instant rollback
+config stash pop   # or: cp ~/.zshrc.bak ~/.zshrc
+```
+
+**Phase F — Sparse-checkout (only after everything works):**
+```bash
+config sparse-checkout init --cone
+config sparse-checkout set \
+  .aliases .exports .functions .gitconfig .gitignore .vimrc .tmux.conf \
+  .inputrc .zshrc .vim platform/macos bootstrap/generate.sh README.md
+```
+This hides `platform/linux/` and `platform/windows/` from the macOS worktree.
+Run this last — if sparse-checkout misconfigures, you want the fallback files
+still visible.
+
+**Key principle:** Each phase is independently reversible. Never combine
+generator output + `.zshrc` rewrite + sparse-checkout into a single action.
+
 ---
 
 ## 2 — One-Shot Generator (`bootstrap/generate.sh`)
@@ -139,6 +210,9 @@ This replaces the current `.{extra,exports,aliases,env-local,functions,env-andro
 Run this on macOS. It reads your current dotfiles and produces all
 `platform/linux/` and `platform/windows/` files automatically. Commit the
 output into the repo.
+
+Supports `--dry-run` mode: writes to a temp directory, runs validation checks,
+shows a full diff, and only proceeds to the real location after you confirm.
 
 ```bash
 #!/usr/bin/env bash
@@ -149,22 +223,42 @@ set -euo pipefail
 #
 # Usage:
 #   chmod +x ~/bootstrap/generate.sh
-#   ~/bootstrap/generate.sh [--tier desktop|laptop]
+#   ~/bootstrap/generate.sh [--tier desktop|laptop] [--dry-run] [--apply]
+#
+# Modes:
+#   --dry-run   Write to /tmp, validate, show diff. No changes to ~/platform/.
+#   --apply     Skip confirmation and write directly (use after a successful dry-run).
+#   (default)   Write to /tmp first, validate, prompt to apply.
 #
 # Default tier: desktop (128 GB). Laptop tier adjusts .wslconfig + Ollama settings.
 
-TIER="${1:-desktop}"
-[[ "$TIER" == "--tier" ]] && TIER="${2:-desktop}"
+TIER="desktop"
+DRY_RUN=false
+AUTO_APPLY=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tier) TIER="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --apply) AUTO_APPLY=true; shift ;;
+    *) echo "Unknown arg: $1"; exit 1 ;;
+  esac
+done
 
 PLATFORM_DIR="$HOME/platform"
-mkdir -p "$PLATFORM_DIR"/{macos,linux,windows}
+STAGING_DIR=$(mktemp -d "/tmp/dotfiles-generate.XXXXXX")
+# Always generate into staging first
+OUTPUT_DIR="$STAGING_DIR/platform"
+mkdir -p "$OUTPUT_DIR"/{macos,linux,windows}
 
 echo "==> Generating platform files (tier: $TIER)"
+echo "    Staging directory: $STAGING_DIR"
+echo ""
 
 # ─── platform/macos/extra ────────────────────────────────────────────────────
 # Extract from current ~/.extra, stripping Android lines
 echo "  → platform/macos/extra"
-cat > "$PLATFORM_DIR/macos/extra" << 'MACOS_EXTRA'
+cat > "$OUTPUT_DIR/macos/extra" << 'MACOS_EXTRA'
 # macOS PATH setup — auto-generated, edit source in ~/.extra then re-run generate.sh
 BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
 
@@ -191,7 +285,7 @@ MACOS_EXTRA
 
 # ─── platform/macos/aliases-local ────────────────────────────────────────────
 echo "  → platform/macos/aliases-local"
-cat > "$PLATFORM_DIR/macos/aliases-local" << 'MACOS_ALIASES'
+cat > "$OUTPUT_DIR/macos/aliases-local" << 'MACOS_ALIASES'
 # macOS-specific aliases
 alias ls="ls -GFh"
 alias vi="/usr/local/bin/vim"
@@ -200,14 +294,14 @@ MACOS_ALIASES
 
 # ─── platform/macos/env-local ────────────────────────────────────────────────
 echo "  → platform/macos/env-local"
-cat > "$PLATFORM_DIR/macos/env-local" << 'MACOS_ENV'
+cat > "$OUTPUT_DIR/macos/env-local" << 'MACOS_ENV'
 # macOS-specific environment variables
 # (empty for now — add as needed)
 MACOS_ENV
 
 # ─── platform/linux/extra ────────────────────────────────────────────────────
 echo "  → platform/linux/extra"
-cat > "$PLATFORM_DIR/linux/extra" << 'LINUX_EXTRA'
+cat > "$OUTPUT_DIR/linux/extra" << 'LINUX_EXTRA'
 # Linux/WSL2 PATH setup — auto-generated by generate.sh
 
 PATH=$HOME/.local/bin:$PATH
@@ -230,7 +324,7 @@ LINUX_EXTRA
 
 # ─── platform/linux/aliases-local ────────────────────────────────────────────
 echo "  → platform/linux/aliases-local"
-cat > "$PLATFORM_DIR/linux/aliases-local" << 'LINUX_ALIASES'
+cat > "$OUTPUT_DIR/linux/aliases-local" << 'LINUX_ALIASES'
 # Linux/WSL2-specific aliases — auto-generated by generate.sh
 
 # ls — GNU coreutils uses --color instead of macOS -G
@@ -251,7 +345,7 @@ LINUX_ALIASES
 
 # ─── platform/linux/env-local ────────────────────────────────────────────────
 echo "  → platform/linux/env-local"
-cat > "$PLATFORM_DIR/linux/env-local" << 'LINUX_ENV'
+cat > "$OUTPUT_DIR/linux/env-local" << 'LINUX_ENV'
 # Linux/WSL2 environment — auto-generated by generate.sh
 
 # Locale (some Ubuntu installs are missing this)
@@ -266,13 +360,13 @@ export OLLAMA_HOST="http://${WIN_IP}:11434"
 ai()    { curl -s "$OLLAMA_HOST/api/generate" -d "{\"model\":\"llama3.3\",\"prompt\":\"$*\",\"stream\":false}" | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" ; }
 codex() { curl -s "$OLLAMA_HOST/api/generate" -d "{\"model\":\"qwen2.5-coder:32b\",\"prompt\":\"$*\",\"stream\":false}" | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" ; }
 
-# Git credential helper (replaces osxkeychain)
-# Note: requires libsecret to be installed — see bootstrap/linux.sh
+# Git credential helper — configure manually post-bootstrap
+# (e.g., gh auth setup-git, or git-credential-manager)
 LINUX_ENV
 
 # ─── platform/windows/wezterm.lua ────────────────────────────────────────────
 echo "  → platform/windows/wezterm.lua"
-cat > "$PLATFORM_DIR/windows/wezterm.lua" << 'WEZTERM'
+cat > "$OUTPUT_DIR/windows/wezterm.lua" << 'WEZTERM'
 -- WezTerm config — mirrors tmux C-a prefix and navigation binds
 -- Auto-generated by generate.sh
 
@@ -345,7 +439,7 @@ WEZTERM
 
 # ─── platform/windows/profile.ps1 ────────────────────────────────────────────
 echo "  → platform/windows/profile.ps1"
-cat > "$PLATFORM_DIR/windows/profile.ps1" << 'PWSH_PROFILE'
+cat > "$OUTPUT_DIR/windows/profile.ps1" << 'PWSH_PROFILE'
 # PowerShell profile — auto-generated by generate.sh
 # Symlink or copy to: $PROFILE (~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1)
 
@@ -373,7 +467,7 @@ PWSH_PROFILE
 # ─── platform/windows/wslconfig ──────────────────────────────────────────────
 echo "  → platform/windows/wslconfig (tier: $TIER)"
 if [[ "$TIER" == "desktop" ]]; then
-cat > "$PLATFORM_DIR/windows/wslconfig" << 'WSLCONFIG_DESKTOP'
+cat > "$OUTPUT_DIR/windows/wslconfig" << 'WSLCONFIG_DESKTOP'
 # .wslconfig — 128 GB Desktop Tier
 # Copy to: C:\Users\<you>\.wslconfig
 [wsl2]
@@ -388,7 +482,7 @@ autoMemoryReclaim=gradual
 sparseVhd=true
 WSLCONFIG_DESKTOP
 else
-cat > "$PLATFORM_DIR/windows/wslconfig" << 'WSLCONFIG_LAPTOP'
+cat > "$OUTPUT_DIR/windows/wslconfig" << 'WSLCONFIG_LAPTOP'
 # .wslconfig — 64 GB Laptop Tier
 # Copy to: C:\Users\<you>\.wslconfig
 [wsl2]
@@ -403,8 +497,101 @@ sparseVhd=true
 WSLCONFIG_LAPTOP
 fi
 
+# ─── Validation ───────────────────────────────────────────────────────────────
 echo ""
-echo "==> Done. Generated files in ~/platform/"
+echo "==> Validating generated output..."
+ERRORS=0
+
+# Check macOS extra has essential PATH components
+if ! grep -q 'BREW_PREFIX' "$OUTPUT_DIR/macos/extra"; then
+  echo "  ✗ FAIL: platform/macos/extra missing BREW_PREFIX"
+  ERRORS=$((ERRORS + 1))
+fi
+
+# Check linux extra has PATH
+if ! grep -q 'local/bin' "$OUTPUT_DIR/linux/extra"; then
+  echo "  ✗ FAIL: platform/linux/extra missing ~/.local/bin PATH"
+  ERRORS=$((ERRORS + 1))
+fi
+
+# Check wezterm.lua has leader key
+if ! grep -q 'LEADER' "$OUTPUT_DIR/windows/wezterm.lua"; then
+  echo "  ✗ FAIL: platform/windows/wezterm.lua missing LEADER key binding"
+  ERRORS=$((ERRORS + 1))
+fi
+
+# Check wslconfig was generated
+if [ ! -f "$OUTPUT_DIR/windows/wslconfig" ]; then
+  echo "  ✗ FAIL: platform/windows/wslconfig not generated"
+  ERRORS=$((ERRORS + 1))
+fi
+
+# Check all expected files exist
+EXPECTED_FILES=(
+  "macos/extra" "macos/aliases-local" "macos/env-local"
+  "linux/extra" "linux/aliases-local" "linux/env-local"
+  "windows/wezterm.lua" "windows/profile.ps1" "windows/wslconfig"
+)
+for f in "${EXPECTED_FILES[@]}"; do
+  if [ ! -f "$OUTPUT_DIR/$f" ]; then
+    echo "  ✗ FAIL: Missing expected file: platform/$f"
+    ERRORS=$((ERRORS + 1))
+  else
+    echo "  ✓ platform/$f ($(wc -l < "$OUTPUT_DIR/$f") lines)"
+  fi
+done
+
+# Compare against current ~/.extra if it exists (macOS sanity check)
+if [ -f "$HOME/.extra" ]; then
+  echo ""
+  echo "==> Diff: current ~/.extra vs generated platform/macos/extra"
+  echo "    (lines prefixed - are in your current file but NOT in the generated output)"
+  diff --color=auto <(grep -v '^#\|^$' "$HOME/.extra" | sort) \
+                    <(grep -v '^#\|^$' "$OUTPUT_DIR/macos/extra" | sort) || true
+fi
+
+echo ""
+if [ $ERRORS -gt 0 ]; then
+  echo "==> ✗ VALIDATION FAILED ($ERRORS errors). Fix issues before applying."
+  echo "    Staged output preserved at: $STAGING_DIR"
+  exit 1
+fi
+
+echo "==> ✓ All validations passed."
+echo ""
+
+# ─── Apply or stop ────────────────────────────────────────────────────────────
+if [ "$DRY_RUN" = true ]; then
+  echo "==> DRY RUN complete. No changes made to ~/platform/."
+  echo "    Review staged output at: $STAGING_DIR"
+  echo ""
+  echo "    To inspect individual files:"
+  echo "      cat $STAGING_DIR/platform/macos/extra"
+  echo "      cat $STAGING_DIR/platform/linux/env-local"
+  echo ""
+  echo "    To apply after review:"
+  echo "      ~/bootstrap/generate.sh --tier $TIER --apply"
+  exit 0
+fi
+
+if [ "$AUTO_APPLY" = false ]; then
+  echo "==> Ready to write to ~/platform/. This will overwrite existing files."
+  echo "    Staged output: $STAGING_DIR/platform/"
+  echo ""
+  read -rp "    Apply? [y/N] " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "    Aborted. Staged output preserved at: $STAGING_DIR"
+    exit 0
+  fi
+fi
+
+# Apply — copy staging to real location
+mkdir -p "$PLATFORM_DIR"/{macos,linux,windows}
+cp -R "$STAGING_DIR/platform/"* "$PLATFORM_DIR/"
+rm -rf "$STAGING_DIR"
+
+echo ""
+echo "==> Applied. Generated files in ~/platform/"
 echo "    Review, then commit:"
 echo "      config add platform/"
 echo "      config commit -m 'Add cross-platform dotfiles'"
@@ -460,17 +647,23 @@ Everything else (`EDITOR`, `HISTSIZE`, `LANG`, etc.) is portable — keep in sha
 
 ### 3.4 `.gitconfig` — Platform Override
 
-The shared `.gitconfig` contains `credential.helper = osxkeychain`. This is
-handled by `.gitconfig.local` (untracked) overriding it on each platform:
+The shared `.gitconfig` may contain `credential.helper = osxkeychain`. On
+Linux/WSL2 this is simply ignored — git falls back to asking for credentials
+unless you configure an alternative. After bootstrap, set up credentials with
+one of:
 
-- **macOS:** No override needed (osxkeychain works)
-- **Linux/WSL2:** Create `~/.gitconfig.local` with:
-  ```ini
-  [credential]
-      helper = /usr/lib/git-core/git-credential-libsecret
-  [user]
-      email = william.meger@crunchyroll.com
-  ```
+```bash
+# Option A — GitHub CLI (easiest, handles HTTPS + SSH)
+gh auth login
+gh auth setup-git
+
+# Option B — Git Credential Manager (GCM, multi-provider)
+# Already bundled with Git for Windows; accessible from WSL2 via:
+git config --global credential.helper "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
+```
+
+No email or identity is pre-filled — configure `~/.gitconfig.local` yourself
+after bootstrap with your preferred identity for this machine.
 
 ### 3.5 `.zshrc` — Update Sourcing Loop
 
@@ -492,6 +685,17 @@ Also remove:
 
 Run this on a fresh Windows 11 machine in an elevated PowerShell. It installs
 everything on the native Windows side and enables WSL2.
+
+**Copy-paste to execute (elevated PowerShell):**
+```powershell
+# Desktop (128 GB):
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; & "$HOME\bootstrap\windows.ps1" -Tier desktop
+
+# Laptop (64 GB):
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; & "$HOME\bootstrap\windows.ps1" -Tier laptop
+```
+
+---
 
 ```powershell
 #Requires -RunAsAdministrator
@@ -524,7 +728,7 @@ scoop bucket add extras
 scoop bucket add nerd-fonts
 scoop install `
     git gh neovim ripgrep fzf delta bat fd cmake ninja `
-    python wezterm git-lfs imagemagick
+    python wezterm git-lfs
 
 scoop install nerd-fonts/Meslo-NF
 
@@ -537,9 +741,6 @@ $wingetApps = @(
     'KhronosGroup.VulkanSDK'
     'Microsoft.VisualStudio.2022.BuildTools'
     'BaldurKarlsson.RenderDoc'
-    'BlenderFoundation.Blender'
-    'GodotEngine.GodotEngine'
-    'Unity.UnityHub'
 )
 foreach ($app in $wingetApps) {
     winget install --id $app --accept-source-agreements --accept-package-agreements --silent
@@ -631,7 +832,24 @@ if ($Tier -eq 'desktop') {
 }
 [Environment]::SetEnvironmentVariable("OLLAMA_KEEP_ALIVE", "30m", "User")
 [Environment]::SetEnvironmentVariable("OLLAMA_HOST", "0.0.0.0:11434", "User")
+[Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "G:\ollama\models", "User")
+New-Item -ItemType Directory -Path "G:\ollama\models" -Force | Out-Null
 Write-Host "    Set OLLAMA_HOST=0.0.0.0:11434 (accessible from WSL2)" -ForegroundColor Green
+Write-Host "    Set OLLAMA_MODELS=G:\ollama\models" -ForegroundColor Green
+
+# ─── Disable Ollama auto-start ────────────────────────────────────────────────
+Write-Host "`nDisabling Ollama auto-start (manual launch only)..." -ForegroundColor Yellow
+$ollamaSvc = Get-Service -Name "Ollama" -ErrorAction SilentlyContinue
+if ($ollamaSvc) {
+    Set-Service -Name "Ollama" -StartupType Manual
+    Write-Host "    Disabled Ollama service auto-start" -ForegroundColor Green
+}
+$startupLnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Ollama.lnk"
+if (Test-Path $startupLnk) {
+    Remove-Item $startupLnk -Force
+    Write-Host "    Removed Ollama startup shortcut" -ForegroundColor Green
+}
+Write-Host "    Ollama will only run when you launch it manually" -ForegroundColor DarkYellow
 
 Write-Host "`n=== Windows bootstrap complete ===`n" -ForegroundColor Cyan
 ```
@@ -669,17 +887,7 @@ sudo apt install -y \
   zsh git curl wget vim tmux tree shellcheck \
   build-essential libssl-dev zlib1g-dev \
   unzip xclip xdg-utils python3-pip python3-venv \
-  libsecret-1-0 libsecret-1-dev \
   glslang-tools spirv-tools spirv-cross
-
-# Build git-credential-libsecret if not present
-if ! [ -f /usr/lib/git-core/git-credential-libsecret ]; then
-  echo "    Building git-credential-libsecret..."
-  cd /usr/share/doc/git/contrib/credential/libsecret
-  sudo make
-  sudo cp git-credential-libsecret /usr/lib/git-core/
-  cd ~
-fi
 
 # ─── 2. Set zsh as default shell ─────────────────────────────────────────────
 echo "[2/10] Setting zsh as default shell..."
@@ -758,18 +966,12 @@ if ! command -v pipx &>/dev/null; then
 fi
 
 
-# ─── 9. Git identity ─────────────────────────────────────────────────────────
-echo "[9/10] Setting up git identity..."
-if [ ! -f "$HOME/.gitconfig.local" ]; then
-  cat > "$HOME/.gitconfig.local" << 'GIT_LOCAL'
-[credential]
-    helper = /usr/lib/git-core/git-credential-libsecret
-
-[user]
-    email = william.meger@crunchyroll.com
-GIT_LOCAL
-  echo "    Created ~/.gitconfig.local"
-fi
+# ─── 9. Git credentials ───────────────────────────────────────────────────────
+echo "[9/10] Git credential setup reminder..."
+echo "    ⚠️  Configure git identity + credentials manually after bootstrap:"
+echo "       gh auth login && gh auth setup-git"
+echo "       git config --global user.email 'you@example.com'"
+echo "       git config --global user.name 'Your Name'"
 
 # ─── 10. Deploy Windows-side configs ─────────────────────────────────────────
 echo "[10/10] Deploying configs to Windows side..."
@@ -797,7 +999,7 @@ echo ""
 if [ ! -f "$HOME/.ssh/id_ed25519" ] && [ ! -f "$HOME/.ssh/id_rsa" ]; then
   echo "⚠️  No SSH keys found. Either:"
   echo "   • Copy from macOS: scp mac:~/.ssh/id_ed25519* ~/.ssh/ && chmod 600 ~/.ssh/id_*"
-  echo "   • Or generate new: ssh-keygen -t ed25519 -C 'william.meger@crunchyroll.com'"
+  echo "   • Or generate new: ssh-keygen -t ed25519 -C 'your-email@example.com'"
 fi
 
 echo ""
@@ -856,17 +1058,13 @@ code --install-extension shader-slang.slang-vscode-extension
 
 | Engine | Install | Notes |
 |---|---|---|
-| Godot 4 | `winget install GodotEngine.GodotEngine` | Vulkan-native, GDScript + C# + GDExtension (C++) |
 | Unreal Engine 5 | Epic Games Launcher | 128 GB handles shader compilation well |
-| Unity | `winget install Unity.UnityHub` | URP/HDRP + Shader Graph |
 
 ### 6.5 3D & Asset Tools
 
 | Tool | Install | Notes |
 |---|---|---|
-| Blender | `winget install BlenderFoundation.Blender` | Modeling, rendering, geometry/shader nodes |
 | Houdini | sidefx.com (apprentice free) | Procedural 3D, VFX, large VDB sims |
-| ImageMagick | `scoop install imagemagick` | CLI texture/image processing |
 | Git LFS | `scoop install git-lfs` | Required for binary assets (textures, meshes) |
 
 ### 6.6 C++ Build System (Custom Engines)
@@ -906,11 +1104,60 @@ cd C:\vcpkg
 
 Two tools are configured: **Ollama** (headless API server, terminal-first) and
 **LM Studio** (GUI app with built-in chat, server mode, and model management).
-They complement each other — Ollama is always running as a background service;
+They complement each other — Ollama runs on demand as a local server;
 LM Studio provides a visual interface when you want one.
 
 Both are **completely offline** after initial model downloads. No accounts, no
 cloud services, no telemetry. Your prompts and code never leave your machine.
+
+### 7.0 Model Storage Strategy
+
+**Drive layout:**
+
+| Drive | Type | Size | Role |
+|---|---|---|---|
+| C: | NVMe | 2 TB | OS + programs only |
+| D: | SSD | 8 TB | Creative work (art, music projects) |
+| E: | SSD | 1–2 TB | After Effects disk cache |
+| G: | HDD | 8 TB | Bulk storage — **LLM models go here** |
+
+**Why G: works for models:** LLM files are write-once (downloaded once, never
+modified) and read-sequentially (loaded straight into RAM on launch). Once a
+model is in memory, disk speed is irrelevant — all inference runs from RAM.
+The only tradeoff is cold-start time:
+
+| Model size | HDD load time | NVMe load time |
+|---|---|---|
+| 5 GB (7B) | ~8–12s | ~2s |
+| 20 GB (32B) | ~30–45s | ~8s |
+| 40 GB (70B) | ~50–70s | ~15s |
+
+This is acceptable for a manual-launch workflow — you start Ollama, wait a
+minute for the model to warm up, then work uninterrupted.
+
+**Configuration:**
+
+```powershell
+# Tell Ollama to store models on G: (set once, persists)
+[Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "G:\ollama\models", "User")
+
+# Tell LM Studio via its Settings UI:
+#   Settings → My Models → Change directory → G:\lmstudio\models
+```
+
+**Folder structure on G:**
+```
+G:\
+├── ollama\
+│   └── models\          # ~100–150 GB (managed by Ollama, don't touch internals)
+└── lmstudio\
+    └── models\          # ~50–100 GB (GGUF files, organized by model name)
+```
+
+**Important:** Do NOT put models on D: (creative SSD). That drive should stay
+clear for sample libraries, project files, and render outputs where random I/O
+performance matters. Models are sequential-read blobs that don't benefit from
+SSD speed once loaded.
 
 ### 7.1 Hardware-Tiered Model Recommendations
 
@@ -923,7 +1170,7 @@ cloud services, no telemetry. Your prompts and code never leave your machine.
 | Fast completions | `qwen2.5-coder:7b` | ~5 GB | Keep in VRAM for instant response |
 | Deep reasoning | `deepseek-r1:32b` | ~20 GB | Architecture decisions, math |
 | Multimodal | `llava:34b` | ~22 GB | Describe textures, RenderDoc frames |
-| **Concurrent** | 2–3 loaded | ~65–85 GB | Leaves 40–60 GB for OS + tools |
+| **Concurrent** | 2–3 loaded | ~65–85 GB | Leaves 40–60 GB for OS + tools (see §7.1.1 for creative app contention) |
 
 **Laptop (64 GB RAM + RTX 3070 8 GB VRAM):**
 
@@ -938,13 +1185,87 @@ cloud services, no telemetry. Your prompts and code never leave your machine.
 
 ---
 
-### 7.2 Ollama — Complete Setup Guide
+### 7.1.1 Memory Contention: Creative Apps vs. LLMs
+
+**The problem:** After Effects, DaVinci Resolve, Premiere Pro, Ableton Live, and
+VJ software (Resolume, TouchDesigner, VDMX) are all RAM-hungry. When you're deep
+in a music production + VJing session, you may have 40–80 GB claimed by creative
+apps alone. Loading a 40 GB LLM on top of that will trigger Windows memory
+pressure — stutters, swap thrashing, or outright OOM kills.
+
+**Why this plan is safe by default:**
+
+1. **Ollama does NOT auto-start.** You explicitly launch it only when you want LLM
+   access (see the toggle script below). Creative sessions won't compete with
+   models sitting idle in RAM.
+
+2. **`OLLAMA_KEEP_ALIVE` auto-unloads.** Even if you forget to stop Ollama, idle
+   models evict themselves after 30 minutes (desktop) or 15 minutes (laptop).
+
+3. **No persistent reservation.** Unlike VRAM (which is exclusive to whoever
+   allocates it), Ollama uses regular system RAM and the Windows VMM can page it
+   out. In practice, a loaded-but-idle model will get pushed to pagefile under
+   memory pressure from After Effects — but this makes model response time spike
+   when you next query it.
+
+**Practical workflow recommendations:**
+
+| Scenario | What to run | What NOT to run |
+|---|---|---|
+| Music production (Ableton + plugins) | No LLM, or 7B only | 70B / 32B models |
+| VJing (Resolume/TD) | No LLM | Anything — these saturate GPU + RAM |
+| NLE video editing (AE / Resolve) | 7B code model max | 32B+ models |
+| Shader dev / coding | Full LLM stack | Heavy NLE renders in background |
+| Idle / browsing / writing | Full LLM stack | — |
+
+**Desktop (128 GB) budget breakdown for creative workflows:**
+
+| Component | RAM claim | Notes |
+|---|---|---|
+| Windows + services | ~6 GB | Baseline |
+| After Effects (complex comp) | 40–64 GB | AE will eat whatever you give it |
+| DaVinci Resolve (color + Fusion) | 12–24 GB | Heavy with Fusion nodes |
+| Ableton Live + plugins | 8–16 GB | Sample libraries dominate |
+| Resolume Arena / TouchDesigner | 4–12 GB | Plus VRAM for textures |
+| **Remaining for LLM** | **varies** | See scenarios above |
+
+**Laptop (64 GB) — more constrained:**
+On 64 GB, do not run LLMs concurrently with heavy creative apps at all. Use
+Ollama for coding/shader sessions only, and kill it before opening AE or Resolve.
+
+**Quick commands for switching modes:**
+
+```powershell
+# Before creative session — kill LLM, free RAM
+Stop-Process -Name ollama -Force -ErrorAction SilentlyContinue
+Write-Host "LLM stopped — full RAM available for creative apps"
+
+# After creative session — start LLM
+Start-Process ollama -ArgumentList "serve" -WindowStyle Hidden
+Write-Host "LLM ready at http://localhost:11434"
+```
+
+**Tuning `OLLAMA_KEEP_ALIVE` for mixed sessions:**
+If you want a small model available during creative work (e.g., quick code
+questions between render previews), lower the keep-alive to 5 minutes so it
+self-evicts quickly when you stop querying:
+
+```powershell
+# Temporary override for a session (doesn't persist)
+$env:OLLAMA_KEEP_ALIVE = "5m"
+ollama serve
+```
+
+**VRAM note (GPU memory is separate):**
+GPU VRAM is exclusively allocated — if Resolume or After Effects GPU Preview is
+using 6 GB of your 8 GB VRAM, a 7B model cannot GPU-offload simultaneously.
+Ollama will fall back to CPU inference (slower but functional). On machines with
+larger VRAM (12+ GB), small models can coexist with lighter GPU creative loads.
 
 #### Step 1: Install Ollama
 
 Ollama is the engine that actually runs AI models on your machine. It installs
-as a Windows background service (like antivirus or Bluetooth — always running,
-no window needed).
+as a Windows application with an optional background service.
 
 ```powershell
 # From PowerShell (elevated — right-click PowerShell → "Run as administrator")
@@ -952,8 +1273,38 @@ winget install Ollama.Ollama
 ```
 
 After install, Ollama runs as a **Windows service** (you'll see a llama icon
-in the system tray, bottom-right of taskbar). It starts automatically on boot
-— no manual launch needed.
+in the system tray, bottom-right of taskbar). By default it starts automatically
+on boot — **disable this** so it doesn't compete for RAM with creative apps:
+
+**Disable auto-start (do this once after install):**
+```powershell
+# Disable the Ollama Windows service from starting at login
+# (Run PowerShell as Administrator)
+Set-Service -Name "Ollama" -StartupType Manual
+
+# If Ollama uses a startup shortcut instead of a service:
+# Remove it from the Startup folder
+$startupPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Ollama.lnk"
+if (Test-Path $startupPath) { Remove-Item $startupPath }
+# Also disable via Task Manager → Startup tab if it appears there
+```
+
+**Launch manually when you want it:**
+- Search "Ollama" in Start menu and click it, or
+- From PowerShell: `Start-Process ollama -ArgumentList "serve"` , or
+- Create a desktop shortcut / pin to taskbar for quick access
+
+**Optional: Create a quick toggle script** (`~/bin/llm-toggle.ps1`):
+```powershell
+$proc = Get-Process ollama -ErrorAction SilentlyContinue
+if ($proc) {
+    Stop-Process -Name ollama -Force
+    Write-Host "⏹ Ollama stopped — RAM freed" -ForegroundColor Yellow
+} else {
+    Start-Process ollama -ArgumentList "serve" -WindowStyle Hidden
+    Write-Host "▶ Ollama started (http://localhost:11434)" -ForegroundColor Green
+}
+```
 
 Verify it's running:
 ```powershell
@@ -986,7 +1337,7 @@ Environment variables tell Ollama how to behave. You need to set these so that:
 | `OLLAMA_MAX_LOADED_MODELS` | `3` | `2` | Number of models kept ready in RAM at once |
 | `OLLAMA_NUM_PARALLEL` | `4` | `2` | How many requests can run at the same time |
 | `OLLAMA_KEEP_ALIVE` | `30m` | `15m` | How long an unused model stays in RAM before unloading |
-| `OLLAMA_MODELS` | `D:\ollama\models` | *(leave blank/skip)* | Where model files are stored (set this only if C: drive is low on space) |
+| `OLLAMA_MODELS` | `G:\ollama\models` | `G:\ollama\models` | Where model files are stored (G: HDD — see §7.0) |
 
 **Or set them via PowerShell (faster, same result):**
 ```powershell
@@ -994,6 +1345,7 @@ Environment variables tell Ollama how to behave. You need to set these so that:
 [Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "3", "User")  # use "2" for laptop
 [Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL", "4", "User")       # use "2" for laptop
 [Environment]::SetEnvironmentVariable("OLLAMA_KEEP_ALIVE", "30m", "User")       # use "15m" for laptop
+[Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "G:\ollama\models", "User")
 ```
 
 **After setting these, restart Ollama:**
@@ -1100,18 +1452,6 @@ ollama create shader-expert -f "$env:TEMP\Modelfile.shader"
 
 # Now use it (it loads the same 32B model but with your graphics-focused system prompt)
 ollama run shader-expert "Write a PBR metallic-roughness BRDF in GLSL"
-```
-
-```powershell
-# Create a Blender Python scripting assistant
-@"
-FROM llama3.3:70b
-SYSTEM You are an expert Blender 4.x Python API developer. You write bpy scripts for procedural geometry generation, shader node trees, and automation. Always use the modern Blender 4.x API conventions. Include error handling and type hints.
-PARAMETER temperature 0.4
-PARAMETER num_ctx 8192
-"@ | Set-Content "$env:TEMP\Modelfile.blender"
-
-ollama create blender-expert -f "$env:TEMP\Modelfile.blender"
 ```
 
 > **`temperature`** controls randomness: 0.0 = deterministic (same answer every
@@ -1959,7 +2299,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi  # →
 | `sparseVhd` | true | true |
 
 **Rationale:** Give WSL2 enough for tmux + builds + shader CLI tools, but
-leave the majority for native Windows (Ollama, engines, Blender all need
+leave the majority for native Windows (Ollama, creative apps, and engines all need
 Windows-side RAM).
 
 ---
@@ -1995,7 +2335,7 @@ dedicated memory (VRAM) instead of system RAM — this makes responses faster.
 - `qwen2.5-coder:14b` → partial offload (~20 layers on GPU, rest on CPU RAM)
 - `llama3.3:70b-q3_K_M` → CPU-only (too large for 8 GB VRAM to help meaningfully)
 - RenderDoc + Vulkan validation layers work natively on the 3070
-- Game engines (Godot, UE5) render at full GPU speed — 8 GB VRAM is fine for dev
+- Game engines (UE5) render at full GPU speed — 8 GB VRAM is fine for dev
 
 **Recommended Ollama strategy for the laptop:**
 - Keep `qwen2.5-coder:7b` loaded on GPU at all times → instant autocomplete
