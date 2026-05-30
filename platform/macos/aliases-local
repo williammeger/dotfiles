@@ -1,0 +1,4 @@
+# macOS-specific aliases
+alias ls="ls -GFh"
+alias vi="/usr/local/bin/vim"
+alias brewup='brew update && brew upgrade && brew cleanup'

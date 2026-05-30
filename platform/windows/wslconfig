@@ -1,0 +1,12 @@
+# .wslconfig — 128 GB Desktop Tier
+# Copy to: C:\Users\<you>\.wslconfig
+[wsl2]
+memory=32GB
+processors=12
+swap=8GB
+localhostForwarding=true
+nestedVirtualization=true
+
+[experimental]
+autoMemoryReclaim=gradual
+sparseVhd=true
