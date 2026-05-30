@@ -3,8 +3,8 @@
 ## Overview
 
 Replicate the macOS `~/.cfg` bare-repo environment on Windows machines for
-shader/game/3D development with offline LLM tooling. No Android or Apple
-development dependencies are included.
+development with offline LLM tooling. Creative workflows (shader, 3D, VJing, music) are
+covered in [creative-llm-integrations.md](creative-llm-integrations.md).
 
 **Target machines:**
 
@@ -1014,74 +1014,10 @@ echo ""
 
 ---
 
-## 6 — Shader / Game / 3D Toolchain
+## 6 — Shader / Game / 3D / Creative Toolchain
 
-All of these run native Windows. Installed by `bootstrap/windows.ps1`.
-
-### 6.1 Graphics APIs & SDKs
-
-| Tool | Install | Purpose |
-|---|---|---|
-| Vulkan SDK | `winget install KhronosGroup.VulkanSDK` | `glslc`, `glslangValidator`, `spirv-cross`, validation layers |
-| Windows SDK | Ships with VS Build Tools | `dxc.exe` (HLSL shader compiler), PIX hooks |
-| RenderDoc | `winget install BaldurKarlsson.RenderDoc` | GPU frame capture, shader debugging |
-| Slang | `winget install ShaderSlang.Slang` | Write once → HLSL/GLSL/SPIR-V/Metal/CUDA |
-| NSight Graphics | Manual download (nvidia.com) | NVIDIA shader debugger + GPU profiler |
-
-### 6.2 Shader Dev Workflow (WSL2 CLI)
-
-```bash
-# Compile GLSL → SPIR-V
-glslangValidator -V shader.vert -o vert.spv
-glslangValidator -V shader.frag -o frag.spv
-
-# Inspect SPIR-V
-spirv-dis vert.spv
-
-# Cross-compile SPIR-V → HLSL (for DX12 targets)
-spirv-cross vert.spv --hlsl --output vert.hlsl
-
-# Ask LLM to explain or fix shader code
-cat shader.frag | codex "This GLSL fragment shader has a compile error. Diagnose and fix it."
-```
-
-### 6.3 VS Code Shader Extensions
-
-```powershell
-code --install-extension slevesque.shader
-code --install-extension raczzalan.glsl-linter
-code --install-extension TimJones.hlsl-preview
-code --install-extension shader-slang.slang-vscode-extension
-```
-
-### 6.4 Game Engines
-
-| Engine | Install | Notes |
-|---|---|---|
-| Unreal Engine 5 | Epic Games Launcher | 128 GB handles shader compilation well |
-
-### 6.5 3D & Asset Tools
-
-| Tool | Install | Notes |
-|---|---|---|
-| Houdini | sidefx.com (apprentice free) | Procedural 3D, VFX, large VDB sims |
-| Git LFS | `scoop install git-lfs` | Required for binary assets (textures, meshes) |
-
-### 6.6 C++ Build System (Custom Engines)
-
-```powershell
-# VS Build Tools (installs MSVC compiler)
-winget install Microsoft.VisualStudio.2022.BuildTools
-
-# vcpkg (C++ package manager)
-git clone https://github.com/microsoft/vcpkg C:\vcpkg
-C:\vcpkg\bootstrap-vcpkg.bat
-[Environment]::SetEnvironmentVariable("VCPKG_ROOT", "C:\vcpkg", "User")
-
-# Common graphics libs
-cd C:\vcpkg
-.\vcpkg install glfw3 glm imgui vulkan-headers spirv-cross shaderc
-```
+Moved to [creative-llm-integrations.md](creative-llm-integrations.md).
+Covers: Blender MCP, shader SDKs, game engines, VJing, music production + LLM workflows.
 
 ---
 
