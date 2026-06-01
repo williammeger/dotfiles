@@ -34,4 +34,7 @@ fi
 GNU_SED_BIN="$BREW_PREFIX/opt/gnu-sed/libexec/gnubin"
 [ -d "$GNU_SED_BIN" ] && PATH="$GNU_SED_BIN:$PATH"
 
+# Copilot skills
+PATH="$HOME/.copilot/skills/tmux-sessions/bin:$PATH"
+
 export PATH

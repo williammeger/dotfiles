@@ -1,0 +1,585 @@
+#!/usr/bin/env bash
+# tmux-mgr — Persistent tmux session manager for Copilot CLI agents
+# Usage: tmux-mgr <command> [args...]
+
+set -euo pipefail
+
+SKILL_DIR="${TMUX_MGR_DIR:-$HOME/.copilot/skills/tmux-sessions}"
+STATE_FILE="$SKILL_DIR/state.json"
+BIN_DIR="$SKILL_DIR/bin"
+
+# Ensure state file exists
+if [[ ! -f "$STATE_FILE" ]]; then
+    echo '{"sessions":{}}' > "$STATE_FILE"
+fi
+
+# ─── Helpers ────────────────────────────────────────────────────────────────
+
+_jq_read() {
+    python3 -c "
+import json, sys
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+print(json.dumps(data, indent=2))
+"
+}
+
+_jq_write() {
+    local script="$1"
+    python3 -c "
+import json, sys
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+$script
+with open('$STATE_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+}
+
+_now() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+_session_exists() {
+    tmux has-session -t "$1" 2>/dev/null
+}
+
+# ─── Commands ───────────────────────────────────────────────────────────────
+
+cmd_status() {
+    echo "═══════════════════════════════════════════════════════"
+    echo "  TMUX SESSION STATUS — $(date '+%Y-%m-%d %H:%M')"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    local sessions
+    sessions=$(tmux list-sessions -F "#{session_name}|#{session_windows}|#{session_attached}|#{session_created}|#{pane_current_path}" 2>/dev/null || true)
+
+    if [[ -z "$sessions" ]]; then
+        echo "  No active tmux sessions."
+        echo ""
+        return
+    fi
+
+    printf "  %-20s %-8s %-10s %-12s %s\n" "SESSION" "WINDOWS" "STATUS" "CREATED" "PURPOSE"
+    printf "  %-20s %-8s %-10s %-12s %s\n" "───────" "───────" "──────" "───────" "───────"
+
+    while IFS='|' read -r name windows attached created path; do
+        local status="detached"
+        [[ "$attached" == "1" ]] && status="attached"
+
+        local created_fmt
+        created_fmt=$(date -r "$created" '+%b %d %H:%M' 2>/dev/null || echo "unknown")
+
+        # Pull purpose from state file
+        local purpose
+        purpose=$(python3 -c "
+import json
+try:
+    with open('$STATE_FILE') as f:
+        data = json.load(f)
+    s = data.get('sessions', {}).get('$name', {})
+    print(s.get('purpose', '—'))
+except:
+    print('—')
+" 2>/dev/null || echo "—")
+
+        printf "  %-20s %-8s %-10s %-12s %s\n" "$name" "$windows" "$status" "$created_fmt" "$purpose"
+    done <<< "$sessions"
+
+    echo ""
+
+    # Show annotations summary
+    local annotated
+    annotated=$(python3 -c "
+import json
+try:
+    with open('$STATE_FILE') as f:
+        data = json.load(f)
+    sessions = data.get('sessions', {})
+    has_notes = [k for k, v in sessions.items() if v.get('notes')]
+    if has_notes:
+        print('  Sessions with notes: ' + ', '.join(has_notes))
+    tagged = set()
+    for v in sessions.values():
+        tagged.update(v.get('tags', []))
+    if tagged:
+        print('  Tags in use: ' + ', '.join(sorted(tagged)))
+except:
+    pass
+" 2>/dev/null || true)
+
+    if [[ -n "$annotated" ]]; then
+        echo "$annotated"
+        echo ""
+    fi
+
+    echo "═══════════════════════════════════════════════════════"
+}
+
+cmd_list() {
+    # JSON output combining live tmux data with stored metadata
+    python3 -c "
+import json, subprocess, os
+from datetime import datetime
+
+state_file = '$STATE_FILE'
+with open(state_file) as f:
+    state = json.load(f)
+
+# Get live session data
+result = subprocess.run(
+    ['tmux', 'list-sessions', '-F', '#{session_name}|#{session_windows}|#{session_attached}|#{session_created}|#{session_activity}'],
+    capture_output=True, text=True
+)
+
+sessions = []
+if result.returncode == 0:
+    for line in result.stdout.strip().split('\n'):
+        if not line:
+            continue
+        parts = line.split('|')
+        name = parts[0]
+        meta = state.get('sessions', {}).get(name, {})
+
+        # Get windows info
+        win_result = subprocess.run(
+            ['tmux', 'list-windows', '-t', name, '-F', '#{window_index}:#{window_name}:#{pane_current_command}'],
+            capture_output=True, text=True
+        )
+        windows = []
+        if win_result.returncode == 0:
+            for w in win_result.stdout.strip().split('\n'):
+                if w:
+                    wp = w.split(':')
+                    windows.append({'index': wp[0], 'name': wp[1] if len(wp) > 1 else '', 'command': wp[2] if len(wp) > 2 else ''})
+
+        sessions.append({
+            'name': name,
+            'windows_count': int(parts[1]) if len(parts) > 1 else 0,
+            'attached': parts[2] == '1' if len(parts) > 2 else False,
+            'created': int(parts[3]) if len(parts) > 3 else 0,
+            'last_activity': int(parts[4]) if len(parts) > 4 else 0,
+            'windows': windows,
+            'metadata': meta
+        })
+
+print(json.dumps({'sessions': sessions}, indent=2))
+"
+}
+
+cmd_inspect() {
+    local session="${1:?Usage: tmux-mgr inspect <session>}"
+
+    if ! _session_exists "$session"; then
+        echo "Error: Session '$session' does not exist."
+        exit 1
+    fi
+
+    echo "─── Session: $session ───────────────────────────────────"
+    echo ""
+
+    # Metadata
+    python3 -c "
+import json
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+meta = data.get('sessions', {}).get('$session', {})
+if meta:
+    if meta.get('purpose'): print(f\"  Purpose:  {meta['purpose']}\")
+    if meta.get('project'): print(f\"  Project:  {meta['project']}\")
+    if meta.get('tags'):    print(f\"  Tags:     {', '.join(meta['tags'])}\")
+    if meta.get('notes'):
+        print('  Notes:')
+        for n in meta['notes']:
+            print(f\"    • {n}\")
+    if meta.get('created_at'): print(f\"  Tracked:  {meta['created_at']}\")
+else:
+    print('  (no metadata stored — use tmux-mgr annotate to add)')
+" 2>/dev/null
+
+    echo ""
+    echo "  Windows:"
+    tmux list-windows -t "$session" -F "    [#{window_index}] #{window_name} (#{window_panes} panes) #{?window_active,← active,}"
+    echo ""
+    echo "  Panes:"
+    tmux list-panes -t "$session" -a -F "    #{session_name}:#{window_index}.#{pane_index} │ #{pane_current_command} │ #{pane_current_path} │ #{pane_width}x#{pane_height}" | grep "^    ${session}:"
+    echo ""
+    echo "───────────────────────────────────────────────────────"
+}
+
+cmd_create() {
+    local name=""
+    local project=""
+    local purpose=""
+    local dir=""
+
+    # Parse args
+    name="${1:?Usage: tmux-mgr create <name> [--project X] [--purpose X] [--dir X]}"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) project="$2"; shift 2 ;;
+            --purpose) purpose="$2"; shift 2 ;;
+            --dir)     dir="$2"; shift 2 ;;
+            *) echo "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    if _session_exists "$name"; then
+        echo "Session '$name' already exists."
+        exit 1
+    fi
+
+    # Create the session
+    local cmd="tmux new-session -d -s \"$name\""
+    [[ -n "$dir" ]] && cmd+=" -c \"$dir\""
+    eval "$cmd"
+
+    # Store metadata
+    python3 -c "
+import json
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+data.setdefault('sessions', {})['$name'] = {
+    'purpose': '$purpose' or None,
+    'project': '$project' or None,
+    'tags': [],
+    'notes': [],
+    'dir': '$dir' or None,
+    'created_at': '$(_now)'
+}
+with open('$STATE_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+
+    echo "Created session: $name"
+    [[ -n "$purpose" ]] && echo "  Purpose: $purpose"
+    [[ -n "$project" ]] && echo "  Project: $project"
+    [[ -n "$dir" ]] && echo "  Dir: $dir"
+}
+
+cmd_kill() {
+    local name="${1:?Usage: tmux-mgr kill <session>}"
+
+    if ! _session_exists "$name"; then
+        echo "Session '$name' does not exist."
+        exit 1
+    fi
+
+    tmux kill-session -t "$name"
+
+    # Update state — mark as killed but keep metadata for history
+    python3 -c "
+import json
+from datetime import datetime
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+if '$name' in data.get('sessions', {}):
+    data['sessions']['$name']['killed_at'] = '$(_now)'
+    data['sessions']['$name']['active'] = False
+with open('$STATE_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+
+    echo "Killed session: $name"
+}
+
+cmd_rename() {
+    local old="${1:?Usage: tmux-mgr rename <old> <new>}"
+    local new="${2:?Usage: tmux-mgr rename <old> <new>}"
+
+    if ! _session_exists "$old"; then
+        echo "Session '$old' does not exist."
+        exit 1
+    fi
+
+    tmux rename-session -t "$old" "$new"
+
+    # Update state
+    python3 -c "
+import json
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+sessions = data.get('sessions', {})
+if '$old' in sessions:
+    sessions['$new'] = sessions.pop('$old')
+with open('$STATE_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+
+    echo "Renamed: $old → $new"
+}
+
+cmd_switch() {
+    local name="${1:?Usage: tmux-mgr switch <session>}"
+
+    if ! _session_exists "$name"; then
+        echo "Session '$name' does not exist."
+        exit 1
+    fi
+
+    tmux switch-client -t "$name" 2>/dev/null || tmux attach-session -t "$name"
+}
+
+cmd_annotate() {
+    local session="${1:?Usage: tmux-mgr annotate <session> --purpose|--tag|--note|--project <value>}"
+    shift
+
+    python3 -c "
+import json, sys
+
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+
+data.setdefault('sessions', {}).setdefault('$session', {
+    'purpose': None, 'project': None, 'tags': [], 'notes': [], 'created_at': '$(_now)'
+})
+s = data['sessions']['$session']
+
+args = $(printf '%s\n' "$@" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip().split('\n')))")
+i = 0
+while i < len(args):
+    if args[i] == '--purpose' and i+1 < len(args):
+        s['purpose'] = args[i+1]; i += 2
+    elif args[i] == '--project' and i+1 < len(args):
+        s['project'] = args[i+1]; i += 2
+    elif args[i] == '--tag' and i+1 < len(args):
+        tag = args[i+1]
+        if tag not in s.setdefault('tags', []):
+            s['tags'].append(tag)
+        i += 2
+    elif args[i] == '--note' and i+1 < len(args):
+        s.setdefault('notes', []).append(args[i+1])
+        i += 2
+    else:
+        i += 1
+
+with open('$STATE_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+
+print(f\"Updated metadata for session: $session\")
+"
+}
+
+cmd_new_window() {
+    local session="${1:?Usage: tmux-mgr new-window <session> [--name X] [--cmd X]}"
+    shift
+
+    local win_name=""
+    local cmd=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) win_name="$2"; shift 2 ;;
+            --cmd)  cmd="$2"; shift 2 ;;
+            *) echo "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    if ! _session_exists "$session"; then
+        echo "Session '$session' does not exist."
+        exit 1
+    fi
+
+    local tmux_cmd="tmux new-window -t \"$session\""
+    [[ -n "$win_name" ]] && tmux_cmd+=" -n \"$win_name\""
+    eval "$tmux_cmd"
+
+    [[ -n "$cmd" ]] && tmux send-keys -t "$session" "$cmd" Enter
+
+    echo "Created window${win_name:+ '$win_name'} in session: $session"
+}
+
+cmd_split() {
+    local session="${1:?Usage: tmux-mgr split <session> [--horizontal|--vertical] [--cmd X]}"
+    shift
+
+    local direction="-v"
+    local cmd=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --horizontal) direction="-h"; shift ;;
+            --vertical)   direction="-v"; shift ;;
+            --cmd)        cmd="$2"; shift 2 ;;
+            *) echo "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    if ! _session_exists "$session"; then
+        echo "Session '$session' does not exist."
+        exit 1
+    fi
+
+    tmux split-window $direction -t "$session"
+    [[ -n "$cmd" ]] && tmux send-keys -t "$session" "$cmd" Enter
+
+    echo "Split pane in session: $session ($direction)"
+}
+
+cmd_send() {
+    local target="${1:?Usage: tmux-mgr send <session>[:<window>][.<pane>] <keys...>}"
+    shift
+    local keys="$*"
+
+    tmux send-keys -t "$target" "$keys" Enter
+}
+
+cmd_snapshot() {
+    echo "Saving layout snapshot..."
+    python3 -c "
+import json, subprocess
+from datetime import datetime
+
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+
+result = subprocess.run(
+    ['tmux', 'list-sessions', '-F', '#{session_name}'],
+    capture_output=True, text=True
+)
+
+if result.returncode == 0:
+    for name in result.stdout.strip().split('\n'):
+        if not name:
+            continue
+        # Get window layouts
+        win_result = subprocess.run(
+            ['tmux', 'list-windows', '-t', name, '-F', '#{window_index}|#{window_name}|#{window_layout}|#{pane_current_path}'],
+            capture_output=True, text=True
+        )
+        windows = []
+        if win_result.returncode == 0:
+            for w in win_result.stdout.strip().split('\n'):
+                if w:
+                    parts = w.split('|')
+                    windows.append({
+                        'index': parts[0],
+                        'name': parts[1] if len(parts) > 1 else '',
+                        'layout': parts[2] if len(parts) > 2 else '',
+                        'path': parts[3] if len(parts) > 3 else ''
+                    })
+
+        data.setdefault('sessions', {}).setdefault(name, {})
+        data['sessions'][name]['snapshot'] = {
+            'timestamp': datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
+            'windows': windows
+        }
+
+with open('$STATE_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+
+print('Snapshot saved for all sessions.')
+"
+}
+
+cmd_restore() {
+    local session="${1:?Usage: tmux-mgr restore <session>}"
+
+    python3 -c "
+import json, subprocess, sys
+
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+
+meta = data.get('sessions', {}).get('$session')
+if not meta or 'snapshot' not in meta:
+    print('No snapshot found for session: $session')
+    sys.exit(1)
+
+snapshot = meta['snapshot']
+base_dir = meta.get('dir') or snapshot['windows'][0].get('path', '') if snapshot['windows'] else ''
+
+# Create session
+cmd = ['tmux', 'new-session', '-d', '-s', '$session']
+if base_dir:
+    cmd.extend(['-c', base_dir])
+subprocess.run(cmd)
+
+# Create additional windows
+for i, win in enumerate(snapshot['windows'][1:], 1):
+    w_cmd = ['tmux', 'new-window', '-t', '$session']
+    if win.get('name'):
+        w_cmd.extend(['-n', win['name']])
+    if win.get('path'):
+        w_cmd.extend(['-c', win['path']])
+    subprocess.run(w_cmd)
+
+# Rename first window
+if snapshot['windows'] and snapshot['windows'][0].get('name'):
+    subprocess.run(['tmux', 'rename-window', '-t', '$session:0', snapshot['windows'][0]['name']])
+
+print(f\"Restored session '$session' with {len(snapshot['windows'])} windows\")
+"
+}
+
+cmd_help() {
+    cat << 'EOF'
+tmux-mgr — Persistent tmux session manager for Copilot CLI agents
+
+COMMANDS:
+  status                 Quick overview of all sessions with metadata
+  list                   JSON output of sessions + metadata (for agent consumption)
+  inspect <session>      Detailed view of a session
+
+  create <name> [opts]   Create a new session
+    --project <name>       Associate with a project
+    --purpose <text>       Set the purpose/description
+    --dir <path>           Starting directory
+
+  kill <session>         Kill a session (preserves metadata)
+  rename <old> <new>     Rename a session
+  switch <session>       Switch to a session
+
+  annotate <session>     Update session metadata
+    --purpose <text>       Set/update purpose
+    --project <name>       Set/update project
+    --tag <tag>            Add a tag
+    --note <text>          Append a note
+
+  new-window <session>   Create a new window in session
+    --name <name>          Window name
+    --cmd <command>        Run command in new window
+
+  split <session>        Split the current pane
+    --horizontal           Horizontal split
+    --vertical             Vertical split (default)
+    --cmd <command>        Run command in new pane
+
+  send <target> <keys>   Send keys to target (session:window.pane)
+  snapshot               Save layout of all sessions
+  restore <session>      Recreate session from last snapshot
+  help                   Show this help
+
+EXAMPLES:
+  tmux-mgr create dev --project myapp --purpose "Feature work"
+  tmux-mgr annotate dev --tag backend --note "Working on auth module"
+  tmux-mgr send dev:build "./gradlew test"
+  tmux-mgr status
+EOF
+}
+
+# ─── Dispatch ───────────────────────────────────────────────────────────────
+
+command="${1:-help}"
+shift 2>/dev/null || true
+
+case "$command" in
+    status)     cmd_status "$@" ;;
+    list)       cmd_list "$@" ;;
+    inspect)    cmd_inspect "$@" ;;
+    create)     cmd_create "$@" ;;
+    kill)       cmd_kill "$@" ;;
+    rename)     cmd_rename "$@" ;;
+    switch)     cmd_switch "$@" ;;
+    annotate)   cmd_annotate "$@" ;;
+    new-window) cmd_new_window "$@" ;;
+    split)      cmd_split "$@" ;;
+    send)       cmd_send "$@" ;;
+    snapshot)   cmd_snapshot "$@" ;;
+    restore)    cmd_restore "$@" ;;
+    help|--help|-h) cmd_help ;;
+    *) echo "Unknown command: $command"; cmd_help; exit 1 ;;
+esac

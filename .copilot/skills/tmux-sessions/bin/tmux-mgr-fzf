@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+# tmux-mgr-fzf — FZF-powered popup interface for tmux-mgr
+# Invoked from tmux keybindings; runs inside a display-popup.
+
+set -euo pipefail
+
+SKILL_DIR="${TMUX_MGR_DIR:-$HOME/.copilot/skills/tmux-sessions}"
+TMX="$SKILL_DIR/bin/tmux-mgr"
+STATE_FILE="$SKILL_DIR/state.json"
+
+# ─── Theme (readable on dark bg + dark selection bar) ────────────────────────
+C_ORANGE=$'\033[38;5;214m'
+C_MUTED=$'\033[38;5;250m'   # light gray — readable on selection bar
+C_BRIGHT=$'\033[38;5;255m'  # near-white
+C_DIM=$'\033[38;5;244m'     # mid gray — visible on black highlight
+C_BRANCH=$'\033[38;5;223m'  # warm cream — branch names
+C_BOLD=$'\033[1m'
+C_RESET=$'\033[0m'
+
+# ─── Pane list builder (branch-aware naming) ─────────────────────────────────
+# Outputs ANSI-colored lines: "target  branch/dir  (cmd)  intent"
+
+_build_pane_list() {
+    local panes
+    panes=$(tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}|#{pane_title}|#{pane_current_command}|#{pane_current_path}" 2>/dev/null)
+    [[ -z "$panes" ]] && return
+
+    echo "$panes" | while IFS='|' read -r target title cmd path; do
+        # Resolve git branch
+        local branch=""
+        local label=""
+        local wt_marker=""
+        if git -C "$path" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
+            branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "")
+        fi
+
+        # Build the label: branch if available, else short path
+        if [[ -n "$branch" ]]; then
+            local root
+            root=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null || echo "")
+            if [[ "$root" == *".worktrees/"* ]]; then
+                wt_marker="◆"
+            fi
+            label=" ${branch}"
+        else
+            # Short path: last 2 segments
+            label="${path/#$HOME/~}"
+            label=$(echo "$label" | rev | cut -d/ -f1-2 | rev)
+        fi
+
+        # Intent from pane title (skip if it's just the hostname or shell name)
+        local intent=""
+        if [[ -n "$title" && "$title" != "$cmd" && "$title" != "$(hostname -s)" && ! "$title" =~ ^[A-Z0-9]{2}-[A-Z0-9]+ ]]; then
+            intent="$title"
+        fi
+
+        # Compose the line
+        if [[ -n "$wt_marker" ]]; then
+            printf "${C_ORANGE}%-7s${C_RESET} ${C_DIM}${wt_marker}${C_RESET}${C_BRANCH}%-38s${C_RESET} ${C_DIM}%-8s${C_RESET} ${C_BRIGHT}%s${C_RESET}\n" \
+                "$target" "${label:0:38}" "$cmd" "${intent:0:34}"
+        else
+            printf "${C_ORANGE}%-7s${C_RESET}  ${C_BRANCH}%-38s${C_RESET} ${C_DIM}%-8s${C_RESET} ${C_BRIGHT}%s${C_RESET}\n" \
+                "$target" "${label:0:38}" "$cmd" "${intent:0:34}"
+        fi
+    done
+}
+
+# ─── FZF common opts (readable selection bar + theme) ─────────────────────────
+# hl+: match highlight on selected, fg+: text on selected, bg+: selection bar
+FZF_THEME="--color=fg+:255,bg+:237,hl:214,hl+:214,pointer:214,prompt:214,header:250,border:244"
+
+# ─── Action picker (top-level menu) ──────────────────────────────────────────
+
+pick_action() {
+    local action
+    action=$(printf "panes\nswitch\ncreate\nannotate\nkill\nsnapshot\nrestore\n[cancel]" | \
+        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
+            --prompt=" ❯ " \
+            --header=$'Session Manager\n\n  ↑↓ navigate  enter select  esc quit' \
+            --preview='case {} in
+                panes) tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  #{pane_title}  (#{pane_current_command})" 2>/dev/null ;;
+                switch) tmux list-sessions 2>/dev/null ;;
+                *) echo {} ;;
+            esac' \
+            --preview-window=right:50%)
+
+    [[ -z "$action" || "$action" == "[cancel]" ]] && exit 0
+    echo "$action"
+}
+
+# ─── Session picker ──────────────────────────────────────────────────────────
+
+pick_session() {
+    local header="${1:-Select session}"
+    local sessions
+    sessions=$(tmux list-sessions -F "#{session_name}" 2>/dev/null)
+    [[ -z "$sessions" ]] && echo "" && return
+
+    local choice
+    choice=$(echo "$sessions" | \
+        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
+            --prompt="session ❯ " \
+            --header="$header"$'\n\n  ↑↓ navigate  enter select  esc back' \
+            --preview='"'"$TMX"' inspect {} 2>/dev/null' \
+            --preview-window=right:50%)
+    echo "$choice"
+}
+
+# ─── Pane browser — the main view into what's happening ──────────────────────
+
+do_panes() {
+    local ctx_bin="$SKILL_DIR/bin/tmux-pane-context"
+    local formatted
+    formatted=$(_build_pane_list)
+    [[ -z "$formatted" ]] && exit 0
+
+    local choice
+    choice=$(echo "$formatted" | \
+        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
+            --prompt="pane ❯ " \
+            --header=$'Panes\n\n  ↑↓ navigate  enter focus pane  ctrl-r refresh  esc quit' \
+            --preview='target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}"); '"$ctx_bin"' "$target" 2>/dev/null' \
+            --preview-window=right:50% \
+            --bind="ctrl-r:reload($SKILL_DIR/bin/tmux-mgr-fzf _pane_list)")
+    [[ -z "$choice" ]] && exit 0
+
+    # Strip ANSI to get target
+    local target
+    target=$(echo "$choice" | sed 's/\x1b\[[0-9;]*m//g' | awk '{print $1}')
+    tmux select-pane -t "$target" 2>/dev/null
+    tmux switch-client -t "${target%%.*}" 2>/dev/null || true
+}
+
+# ─── Quick-switch mode — session level with pane overview in preview ─────────
+
+do_quick_switch() {
+    local sessions
+    sessions=$(tmux list-sessions -F "#{session_name}|#{session_windows}|#{?session_attached,attached,detached}" 2>/dev/null)
+    [[ -z "$sessions" ]] && exit 0
+
+    local ctx_bin="$SKILL_DIR/bin/tmux-pane-context"
+
+    local formatted
+    formatted=$(echo "$sessions" | while IFS='|' read -r name wins status; do
+        local status_color="$C_DIM"
+        [[ "$status" == "attached" ]] && status_color="$C_BRIGHT"
+        printf "${C_ORANGE}%-12s${C_RESET}  ${C_BRIGHT}%s win${C_RESET}  ${status_color}%s${C_RESET}\n" "$name" "$wins" "$status"
+    done)
+
+    local choice
+    choice=$(echo "$formatted" | \
+        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
+            --prompt="⟩ " \
+            --header=$'Sessions\n\n  ↑↓ navigate  enter switch  esc quit' \
+            --preview='
+                session=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
+                printf "\033[38;5;214m═══ %s ═══\033[0m\n\n" "$session"
+                tmux list-panes -t "$session" -F "  .#{pane_index}  #{pane_title}" 2>/dev/null
+                echo ""
+                echo -e "\033[38;5;244m─────────────────────────────────────────\033[0m"
+                '"$ctx_bin"' "$session:0.0" 2>/dev/null | tail -n +7
+            ' \
+            --preview-window=right:50%)
+    [[ -z "$choice" ]] && exit 0
+
+    local target
+    target=$(echo "$choice" | sed 's/\x1b\[[0-9;]*m//g' | awk '{print $1}')
+    tmux switch-client -t "$target"
+}
+
+# ─── Handlers ────────────────────────────────────────────────────────────────
+
+do_create() {
+    local name purpose project dir
+
+    printf "Session name: "
+    read -r name
+    [[ -z "$name" ]] && exit 0
+
+    printf "Purpose (optional): "
+    read -r purpose
+
+    printf "Project (optional): "
+    read -r project
+
+    printf "Directory (optional): "
+    read -r dir
+
+    local cmd="$TMX create \"$name\""
+    [[ -n "$purpose" ]] && cmd+=" --purpose \"$purpose\""
+    [[ -n "$project" ]] && cmd+=" --project \"$project\""
+    [[ -n "$dir" ]] && cmd+=" --dir \"$dir\""
+
+    eval "$cmd"
+    sleep 0.5
+}
+
+do_annotate() {
+    local session
+    session=$(pick_session "Annotate session")
+    [[ -z "$session" ]] && exit 0
+
+    local field
+    field=$(printf "purpose\nproject\ntag\nnote\n[cancel]" | \
+        fzf --height=100% --layout=reverse --border=rounded --prompt="field ❯ " \
+            --header="Annotate: $session")
+    [[ -z "$field" || "$field" == "[cancel]" ]] && exit 0
+
+    printf "Value for --%s: " "$field"
+    read -r value
+    [[ -z "$value" ]] && exit 0
+
+    $TMX annotate "$session" --"$field" "$value"
+    sleep 0.3
+}
+
+do_kill() {
+    local session
+    session=$(pick_session "Kill session")
+    [[ -z "$session" ]] && exit 0
+
+    printf "Kill '%s'? [y/N]: " "$session"
+    read -r confirm
+    [[ "$confirm" =~ ^[Yy] ]] || exit 0
+
+    tmux kill-session -t "$session"
+    python3 -c "
+import json
+from datetime import datetime, timezone
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+if '$session' in data.get('sessions', {}):
+    data['sessions']['$session']['killed_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    data['sessions']['$session']['active'] = False
+with open('$STATE_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+" 2>/dev/null
+    echo "Killed: $session"
+    sleep 0.3
+}
+
+do_snapshot() {
+    $TMX snapshot
+    sleep 0.3
+}
+
+do_restore() {
+    local candidates
+    candidates=$(python3 -c "
+import json
+with open('$STATE_FILE') as f:
+    data = json.load(f)
+for name, meta in data.get('sessions', {}).items():
+    if 'snapshot' in meta:
+        print(name)
+" 2>/dev/null)
+
+    [[ -z "$candidates" ]] && echo "No snapshots." && sleep 0.5 && exit 0
+
+    local session
+    session=$(echo "$candidates" | \
+        fzf --height=100% --layout=reverse --border=rounded --prompt="restore ❯ " \
+            --header="Restore from snapshot")
+    [[ -z "$session" ]] && exit 0
+
+    $TMX restore "$session"
+    sleep 0.3
+}
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+MODE="${1:-menu}"
+
+case "$MODE" in
+    menu)
+        action=$(pick_action)
+        case "$action" in
+            panes)    do_panes ;;
+            switch)   do_quick_switch ;;
+            create)   do_create ;;
+            annotate) do_annotate ;;
+            kill)     do_kill ;;
+            snapshot) do_snapshot ;;
+            restore)  do_restore ;;
+        esac
+        ;;
+    switch)
+        do_quick_switch ;;
+    panes)
+        do_panes ;;
+    _pane_list)
+        _build_pane_list ;;
+    *)
+        echo "Unknown mode: $MODE"
+        exit 1 ;;
+esac

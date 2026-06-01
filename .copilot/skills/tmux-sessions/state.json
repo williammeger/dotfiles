@@ -1,0 +1,41 @@
+{
+  "sessions": {
+    "test-session": {
+      "purpose": "Testing the skill",
+      "project": "cr-android-app",
+      "tags": [
+        "android",
+        "core"
+      ],
+      "notes": [
+        "Validating skill works"
+      ],
+      "dir": "/Users/wiliammeger/Development/cr-android-app",
+      "created_at": "2026-06-01T04:07:10Z",
+      "snapshot": {
+        "timestamp": "2026-06-01T04:07:30.985794Z",
+        "windows": [
+          {
+            "index": "0",
+            "name": "zsh",
+            "layout": "4630,80x24,0,0{19x24,0,0[19x11,0,0,99,19x12,0,12,103],19x24,20,0[19x11,20,0,100,19x12,20,12,104],19x24,40,0[19x11,40,0,101,19x12,40,12,105],20x24,60,0[20x11,60,0,102,20x12,60,12,106]}",
+            "path": "/Users/wiliammeger"
+          }
+        ]
+      }
+    },
+    "0": {
+      "snapshot": {
+        "timestamp": "2026-06-01T04:07:30.968275Z",
+        "windows": [
+          {
+            "index": "0",
+            "name": "wiliammeger",
+            "layout": "870f,381x78,0,0{180x78,0,0[180x39,0,0{97x39,0,0,14,82x39,98,0,88},180x38,0,40{97x38,0,40,15,82x38,98,40,22}],200x78,181,0[200x39,181,0,3,200x38,181,40{100x38,181,40,97,99x38,282,40,98}]}",
+            "path": "/Users/wiliammeger"
+          }
+        ]
+      }
+    }
+  }
+}

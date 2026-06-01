@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# tmux-pane-context — Renders rich context for a tmux pane by matching
+# its working directory to the most recent Copilot session in the session store.
+#
+# Usage: tmux-pane-context <session:window.pane>
+# Output: ANSI-colored text for fzf --ansi preview
+
+set -euo pipefail
+
+TARGET="${1:?Usage: tmux-pane-context <target>}"
+DB="$HOME/.copilot/session-store.db"
+
+# ─── Theme (lighter grays, readable in fzf preview) ──────────────────────────
+C_ORANGE=$'\033[38;5;214m'
+C_MUTED=$'\033[38;5;250m'   # light gray
+C_BRIGHT=$'\033[38;5;255m'  # near-white
+C_DIM=$'\033[38;5;244m'     # mid gray (borders, separators)
+C_BRANCH=$'\033[38;5;223m'  # warm cream (branches)
+C_DONE=$'\033[38;5;151m'    # soft green (completed items)
+C_BOLD=$'\033[1m'
+C_RESET=$'\033[0m'
+
+# ─── Pane metadata ───────────────────────────────────────────────────────────
+pane_title=$(tmux display-message -t "$TARGET" -p "#{pane_title}" 2>/dev/null || echo "")
+pane_cmd=$(tmux display-message -t "$TARGET" -p "#{pane_current_command}" 2>/dev/null || echo "")
+pane_path=$(tmux display-message -t "$TARGET" -p "#{pane_current_path}" 2>/dev/null || echo "")
+
+# ─── Git / worktree info ─────────────────────────────────────────────────────
+git_branch=""
+git_root=""
+worktree_name=""
+
+if [[ -n "$pane_path" ]] && git -C "$pane_path" rev-parse --is-inside-work-tree &>/dev/null; then
+    git_branch=$(git -C "$pane_path" branch --show-current 2>/dev/null || echo "")
+    git_root=$(git -C "$pane_path" rev-parse --show-toplevel 2>/dev/null || echo "")
+
+    # Detect worktree: path contains .worktrees/
+    if [[ "$git_root" == *".worktrees/"* ]]; then
+        worktree_name=$(basename "$git_root")
+    fi
+fi
+
+# ─── Derive display name ─────────────────────────────────────────────────────
+display_name=""
+if [[ -n "$git_branch" ]]; then
+    display_name="$git_branch"
+elif [[ -n "$pane_path" ]]; then
+    display_name="${pane_path/#$HOME/~}"
+    # Show only last 2 segments for brevity
+    display_name=$(echo "$display_name" | rev | cut -d/ -f1-2 | rev)
+fi
+
+# ─── Render header ───────────────────────────────────────────────────────────
+echo "${C_DIM}┌──────────────────────────────────────────────────────${C_RESET}"
+echo "${C_DIM}│${C_RESET} ${C_ORANGE}${C_BOLD}$TARGET${C_RESET}"
+
+if [[ -n "$pane_title" && "$pane_title" != "$pane_cmd" ]]; then
+    echo "${C_DIM}│${C_RESET} ${C_BRIGHT}$pane_title${C_RESET}"
+fi
+
+echo "${C_DIM}├──────────────────────────────────────────────────────${C_RESET}"
+
+# Branch line
+if [[ -n "$git_branch" ]]; then
+    local_label="${C_BRANCH} $git_branch${C_RESET}"
+    if [[ -n "$worktree_name" ]]; then
+        local_label+="  ${C_MUTED}(worktree)${C_RESET}"
+    fi
+    echo "${C_DIM}│${C_RESET} $local_label"
+fi
+
+# Path + command
+short_path=$(echo "$pane_path" | sed "s|$HOME|~|")
+echo "${C_DIM}│${C_RESET} ${C_MUTED}${pane_cmd} @ ${short_path}${C_RESET}"
+echo "${C_DIM}└──────────────────────────────────────────────────────${C_RESET}"
+echo ""
+
+# ─── Session store lookup ────────────────────────────────────────────────────
+if [[ ! -f "$DB" ]]; then
+    echo "${C_MUTED}  (no session store)${C_RESET}"
+    exit 0
+fi
+
+PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_BRIGHT="$C_BRIGHT" C_DONE="$C_DONE" C_DIM="$C_DIM" C_BOLD="$C_BOLD" C_RESET="$C_RESET" python3 << 'PYEOF'
+import sqlite3
+import os
+import sys
+import textwrap
+
+db_path = os.path.expanduser("~/.copilot/session-store.db")
+pane_path = os.environ.get("PANE_PATH", "")
+
+# ANSI from env
+O = os.environ.get("C_ORANGE", "")
+M = os.environ.get("C_MUTED", "")
+B = os.environ.get("C_BRIGHT", "")
+G = os.environ.get("C_DONE", "")
+D = os.environ.get("C_DIM", "")
+BD = os.environ.get("C_BOLD", "")
+R = os.environ.get("C_RESET", "")
+
+if not pane_path or not os.path.exists(db_path):
+    print(f"  {M}(no matching session data){R}")
+    sys.exit(0)
+
+conn = sqlite3.connect(db_path)
+conn.row_factory = sqlite3.Row
+
+# Exact cwd match
+session = conn.execute("""
+    SELECT id, summary, cwd, updated_at
+    FROM sessions WHERE cwd = ?
+    ORDER BY updated_at DESC LIMIT 1
+""", (pane_path,)).fetchone()
+
+# Prefix match (worktrees, subdirs)
+if not session:
+    session = conn.execute("""
+        SELECT id, summary, cwd, updated_at
+        FROM sessions
+        WHERE ? LIKE cwd || '%' OR cwd LIKE ? || '%'
+        ORDER BY updated_at DESC LIMIT 1
+    """, (pane_path, pane_path)).fetchone()
+
+if not session:
+    print(f"  {M}(no Copilot session for this directory){R}")
+    sys.exit(0)
+
+session_id = session["id"]
+summary = session["summary"] or "(no summary)"
+updated = session["updated_at"] or ""
+
+print(f"  {O}{BD}{summary}{R}")
+print(f"  {M}{updated[:19].replace('T', ' ')}{R}")
+print("")
+
+# Latest checkpoint
+cp = conn.execute("""
+    SELECT title, overview, work_done, next_steps
+    FROM checkpoints WHERE session_id = ?
+    ORDER BY checkpoint_number DESC LIMIT 1
+""", (session_id,)).fetchone()
+
+if cp:
+    if cp["title"]:
+        print(f"  {D}──{R} {B}{cp['title']}{R} {D}──{R}")
+        print("")
+
+    if cp["overview"]:
+        wrapped = textwrap.fill(cp["overview"], width=52,
+                                initial_indent="  ", subsequent_indent="  ")
+        print(f"{M}{wrapped}{R}")
+        print("")
+
+    if cp["work_done"]:
+        print(f"  {G}{BD}DONE:{R}")
+        for line in cp["work_done"].split("\n")[:6]:
+            line = line.strip()
+            if line:
+                print(f"  {G}  • {line[:60]}{R}")
+        print("")
+
+    if cp["next_steps"]:
+        print(f"  {O}{BD}NEXT:{R}")
+        for line in cp["next_steps"].split("\n")[:4]:
+            line = line.strip()
+            if line:
+                print(f"  {O}  → {line[:60]}{R}")
+else:
+    turn = conn.execute("""
+        SELECT user_message FROM turns
+        WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1
+    """, (session_id,)).fetchone()
+    if turn and turn["user_message"]:
+        msg = turn["user_message"][:180]
+        wrapped = textwrap.fill(msg, width=52, initial_indent="  ", subsequent_indent="  ")
+        print(f"  {M}ASK:{R}")
+        print(f"{M}{wrapped}{R}")
+
+conn.close()
+PYEOF
