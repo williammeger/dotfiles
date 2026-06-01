@@ -10,13 +10,13 @@ set -euo pipefail
 TARGET="${1:?Usage: tmux-pane-context <target>}"
 DB="$HOME/.copilot/session-store.db"
 
-# ─── Theme (lighter grays, readable in fzf preview) ──────────────────────────
-C_ORANGE=$'\033[38;5;214m'
-C_MUTED=$'\033[38;5;250m'   # light gray
-C_BRIGHT=$'\033[38;5;255m'  # near-white
-C_DIM=$'\033[38;5;244m'     # mid gray (borders, separators)
-C_BRANCH=$'\033[38;5;223m'  # warm cream (branches)
-C_DONE=$'\033[38;5;151m'    # soft green (completed items)
+# ─── Theme (dark foregrounds for light terminal bg) ──────────────────────────
+C_ORANGE=$'\033[38;5;166m'  # darker orange — accent
+C_MUTED=$'\033[38;5;241m'   # dark gray — secondary text
+C_BRIGHT=$'\033[38;5;235m'  # near-black — primary text
+C_DIM=$'\033[38;5;245m'     # mid gray (borders, separators)
+C_BRANCH=$'\033[38;5;30m'   # teal — branch names
+C_DONE=$'\033[38;5;28m'     # dark green (completed items)
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
 

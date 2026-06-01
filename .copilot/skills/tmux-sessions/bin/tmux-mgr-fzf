@@ -8,12 +8,12 @@ SKILL_DIR="${TMUX_MGR_DIR:-$HOME/.copilot/skills/tmux-sessions}"
 TMX="$SKILL_DIR/bin/tmux-mgr"
 STATE_FILE="$SKILL_DIR/state.json"
 
-# ─── Theme (readable on dark bg + dark selection bar) ────────────────────────
-C_ORANGE=$'\033[38;5;214m'
-C_MUTED=$'\033[38;5;250m'   # light gray — readable on selection bar
-C_BRIGHT=$'\033[38;5;255m'  # near-white
-C_DIM=$'\033[38;5;244m'     # mid gray — visible on black highlight
-C_BRANCH=$'\033[38;5;223m'  # warm cream — branch names
+# ─── Theme (dark foregrounds for light terminal bg) ──────────────────────────
+C_ORANGE=$'\033[38;5;166m'  # darker orange — accent, always legible
+C_MUTED=$'\033[38;5;241m'   # dark gray — secondary text
+C_BRIGHT=$'\033[38;5;235m'  # near-black — primary text
+C_DIM=$'\033[38;5;245m'     # mid gray — borders, separators
+C_BRANCH=$'\033[38;5;30m'   # teal — branch names (dark, saturated)
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
 
@@ -65,9 +65,8 @@ _build_pane_list() {
     done
 }
 
-# ─── FZF common opts (readable selection bar + theme) ─────────────────────────
-# hl+: match highlight on selected, fg+: text on selected, bg+: selection bar
-FZF_THEME="--color=fg+:255,bg+:237,hl:214,hl+:214,pointer:214,prompt:214,header:250,border:244"
+# ─── FZF common opts (no bg override — inherits terminal; dark selection bar) ─
+FZF_THEME="--color=fg+:255,bg+:236,hl:166,hl+:166,pointer:166,prompt:166,header:240,border:245,info:245"
 
 # ─── Action picker (top-level menu) ──────────────────────────────────────────
 
@@ -76,7 +75,9 @@ pick_action() {
     action=$(printf "panes\nswitch\ncreate\nannotate\nkill\nsnapshot\nrestore\n[cancel]" | \
         fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
             --prompt=" ❯ " \
-            --header=$'Session Manager\n\n  ↑↓ navigate  enter select  esc quit' \
+            --header=$'Session Manager' \
+            --border-label=" ↑↓ navigate · enter select · esc quit " \
+            --border-label-pos=0:bottom \
             --preview='case {} in
                 panes) tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  #{pane_title}  (#{pane_current_command})" 2>/dev/null ;;
                 switch) tmux list-sessions 2>/dev/null ;;
@@ -100,7 +101,9 @@ pick_session() {
     choice=$(echo "$sessions" | \
         fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
             --prompt="session ❯ " \
-            --header="$header"$'\n\n  ↑↓ navigate  enter select  esc back' \
+            --header="$header" \
+            --border-label=" ↑↓ navigate · enter select · esc back " \
+            --border-label-pos=0:bottom \
             --preview='"'"$TMX"' inspect {} 2>/dev/null' \
             --preview-window=right:50%)
     echo "$choice"
@@ -118,10 +121,14 @@ do_panes() {
     choice=$(echo "$formatted" | \
         fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
             --prompt="pane ❯ " \
-            --header=$'Panes\n\n  ↑↓ navigate  enter focus pane  ctrl-r refresh  esc quit' \
+            --header=$'Panes' \
+            --border-label=" ↑↓ navigate · enter focus · ctrl-r refresh · shift-↑↓ scroll preview · esc quit " \
+            --border-label-pos=0:bottom \
             --preview='target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}"); '"$ctx_bin"' "$target" 2>/dev/null' \
             --preview-window=right:50% \
-            --bind="ctrl-r:reload($SKILL_DIR/bin/tmux-mgr-fzf _pane_list)")
+            --bind="ctrl-r:reload($SKILL_DIR/bin/tmux-mgr-fzf _pane_list)" \
+            --bind="shift-up:preview-up,shift-down:preview-down" \
+            --bind="shift-left:preview-page-up,shift-right:preview-page-down")
     [[ -z "$choice" ]] && exit 0
 
     # Strip ANSI to get target
@@ -151,16 +158,20 @@ do_quick_switch() {
     choice=$(echo "$formatted" | \
         fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
             --prompt="⟩ " \
-            --header=$'Sessions\n\n  ↑↓ navigate  enter switch  esc quit' \
+            --header=$'Sessions' \
+            --border-label=" ↑↓ navigate · enter switch · shift-↑↓ scroll preview · esc quit " \
+            --border-label-pos=0:bottom \
             --preview='
                 session=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
-                printf "\033[38;5;214m═══ %s ═══\033[0m\n\n" "$session"
+                printf "\033[38;5;166m═══ %s ═══\033[0m\n\n" "$session"
                 tmux list-panes -t "$session" -F "  .#{pane_index}  #{pane_title}" 2>/dev/null
                 echo ""
-                echo -e "\033[38;5;244m─────────────────────────────────────────\033[0m"
+                echo -e "\033[38;5;245m─────────────────────────────────────────\033[0m"
                 '"$ctx_bin"' "$session:0.0" 2>/dev/null | tail -n +7
             ' \
-            --preview-window=right:50%)
+            --preview-window=right:50% \
+            --bind="shift-up:preview-up,shift-down:preview-down" \
+            --bind="shift-left:preview-page-up,shift-right:preview-page-down")
     [[ -z "$choice" ]] && exit 0
 
     local target
