@@ -12,13 +12,13 @@ DB="$HOME/.copilot/session-store.db"
 
 # ─── Theme (from tmux conf — dark foregrounds for light terminal bg) ─────────
 # Palette: 214 (orange accent), 232 (black), 238 (dark gray), 246 (mid gray)
-# Semantic: 65 (muted green — done), 130 (amber — remaining)
+# Semantic: green (ANSI 32, matches git branch in prompt), 130 (amber — remaining)
 C_ORANGE=$'\033[38;5;214m'  # colour214 — accent
 C_PRIMARY=$'\033[38;5;232m' # colour232 — near-black (prominent: titles, branches)
 C_TEXT=$'\033[38;5;238m'    # colour238 — dark gray (standard text)
 C_MUTED=$'\033[38;5;246m'   # colour246 — mid gray (less prominent: paths, meta)
-C_DONE=$'\033[38;5;65m'    # muted green — completed items
-C_NEXT=$'\033[38;5;130m'   # amber — remaining/next steps
+C_DONE=$'\033[32m'          # standard ANSI green — matches git branch in prompt
+C_NEXT=$'\033[38;5;130m'    # amber — remaining/next steps
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
 
@@ -87,6 +87,7 @@ PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_PRIMARY="$C_PRI
 import sqlite3
 import os
 import sys
+import textwrap
 
 db_path = os.path.expanduser("~/.copilot/session-store.db")
 pane_path = os.environ.get("PANE_PATH", "")
@@ -100,6 +101,14 @@ G = os.environ.get("C_DONE", "")
 N = os.environ.get("C_NEXT", "")
 BD = os.environ.get("C_BOLD", "")
 R = os.environ.get("C_RESET", "")
+
+WIDTH = 52
+
+def prose(text, color, indent="  "):
+    """Render text as wrapped prose with consistent color."""
+    clean = " ".join(text.replace("`", "").split())
+    for line in textwrap.wrap(clean, width=WIDTH):
+        print(f"{indent}{color}{line}{R}")
 
 if not pane_path or not os.path.exists(db_path):
     print(f"  {M}(no matching session data){R}")
@@ -128,6 +137,9 @@ if not session:
 
 if not session:
     print(f"  {M}(no Copilot session for this directory){R}")
+    print("")
+    print(f"  {M}{'─' * WIDTH}{R}")
+    print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
     sys.exit(0)
 
 session_id = session["id"]
@@ -151,38 +163,30 @@ if cp:
         print("")
 
     if cp["overview"]:
-        # Bullet the overview into short points
-        overview = cp["overview"].strip()
-        lines = [l.strip() for l in overview.replace(". ", ".\n").split("\n") if l.strip()]
-        for line in lines[:4]:
-            print(f"  {T}• {line[:56]}{R}")
+        prose(cp["overview"], T)
         print("")
 
     if cp["work_done"]:
         print(f"  {G}{BD}✓ Done{R}")
-        for line in cp["work_done"].split("\n")[:6]:
-            line = line.strip().lstrip("- •*[]x ").replace("`", "")
-            if line and len(line) > 2:
-                print(f"  {G}  • {line[:54]}{R}")
+        prose(cp["work_done"], G)
         print("")
 
     if cp["next_steps"]:
         print(f"  {N}{BD}→ Next{R}")
-        for line in cp["next_steps"].split("\n")[:4]:
-            line = line.strip().lstrip("- •*[]x ").replace("`", "")
-            if line and len(line) > 2:
-                print(f"  {N}  • {line[:54]}{R}")
+        prose(cp["next_steps"], N)
 else:
     turn = conn.execute("""
         SELECT user_message FROM turns
         WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1
     """, (session_id,)).fetchone()
     if turn and turn["user_message"]:
-        msg = turn["user_message"][:200]
-        lines = [l.strip() for l in msg.split("\n") if l.strip()]
         print(f"  {M}ASK:{R}")
-        for line in lines[:4]:
-            print(f"  {T}  {line[:54]}{R}")
+        prose(turn["user_message"][:300], T)
 
 conn.close()
+
+# Help — always visible at the bottom
+print("")
+print(f"  {M}{'─' * WIDTH}{R}")
+print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
 PYEOF
