@@ -1,330 +1,128 @@
 #!/usr/bin/env bash
-# tmux-mgr-fzf — FZF-powered popup interface for tmux-mgr
-# Invoked from tmux keybindings; runs inside a display-popup.
-# Supports hierarchical navigation: Sessions → Windows → Panes
+# tmux-mgr-fzf — FZF-powered tmux navigator
+# Single fzf instance with reload-based view switching (sessions/windows/panes).
+# Inspired by sesh, tmux-sessionx, tmux-agent-status patterns.
 
 set -euo pipefail
 
 SKILL_DIR="${TMUX_MGR_DIR:-$HOME/.copilot/skills/tmux-sessions}"
-TMX="$SKILL_DIR/bin/tmux-mgr"
 CTX_BIN="$SKILL_DIR/bin/tmux-pane-context"
-STATE_FILE="$SKILL_DIR/state.json"
 
-# ─── Theme (from tmux conf — dark foregrounds for light terminal bg) ─────────
-# Palette: 214 (orange accent), 232 (black), 238 (dark gray), 246 (mid gray)
-C_ORANGE=$'\033[38;5;214m'  # colour214 — accent (same as active border/tabs)
-C_PRIMARY=$'\033[38;5;232m' # colour232 — near-black (prominent text: branches)
-C_TEXT=$'\033[38;5;238m'    # colour238 — dark gray (standard body text)
-C_MUTED=$'\033[38;5;246m'   # colour246 — mid gray (less prominent: commands, meta)
+# ─── Theme (from tmux conf: 214, 232, 238, 246) ─────────────────────────────
+C_ORANGE=$'\033[38;5;214m'
+C_PRIMARY=$'\033[38;5;232m'
+C_TEXT=$'\033[38;5;238m'
+C_MUTED=$'\033[38;5;246m'
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
 
-# ─── FZF common opts (light selection bar; theme grays stay readable on it) ───
 FZF_THEME="--color=fg+:232,bg+:252,hl:214,hl+:214,pointer:214,prompt:214,header:238,border:246,info:246"
-FZF_NAV="--bind=shift-up:preview-up,shift-down:preview-down --bind=shift-left:preview-page-up,shift-right:preview-page-down"
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+# ─── List builders ───────────────────────────────────────────────────────────
 
-_strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
-
-_git_label() {
-    local path="$1"
-    local branch="" wt=""
-    if git -C "$path" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
-        branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "")
-        local root
-        root=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null || echo "")
-        [[ "$root" == *".worktrees/"* ]] && wt="◆"
-    fi
-    if [[ -n "$branch" ]]; then
-        echo "${wt} ${branch}"
-    else
-        echo "${path/#$HOME/\~}" | rev | cut -d/ -f1-2 | rev
-    fi
-}
-
-# ─── Session list ────────────────────────────────────────────────────────────
-
-_build_session_list() {
-    tmux list-sessions -F "#{session_name}|#{session_windows}|#{session_attached}|#{session_activity}" 2>/dev/null | \
-    while IFS='|' read -r name wins attached _activity; do
-        local status_icon="○"
-        [[ "$attached" == "1" ]] && status_icon="●"
+_list_sessions() {
+    tmux list-sessions -F "#{session_name}|#{session_windows}|#{session_attached}" 2>/dev/null | \
+    while IFS='|' read -r name wins attached; do
+        local icon="○"
+        [[ "$attached" == "1" ]] && icon="●"
         printf "${C_ORANGE}%s${C_RESET}  ${C_TEXT}%s win${C_RESET}  ${C_MUTED}%s${C_RESET}\n" \
-            "$name" "$wins" "$status_icon"
+            "$name" "$wins" "$icon"
     done
 }
 
-# ─── Window list for a session ───────────────────────────────────────────────
-
-_build_window_list() {
-    local session="$1"
-    tmux list-windows -t "$session" -F "#{window_index}|#{window_name}|#{window_panes}|#{window_active}|#{pane_current_path}" 2>/dev/null | \
-    while IFS='|' read -r idx wname panes active path; do
-        local marker=" "
-        [[ "$active" == "1" ]] && marker="›"
+_list_windows() {
+    tmux list-windows -a -F "#{session_name}:#{window_index}|#{window_name}|#{window_panes}|#{pane_current_path}" 2>/dev/null | \
+    while IFS='|' read -r target wname panes path; do
         local label
-        label=$(_git_label "$path")
-        printf "${C_MUTED}%s${C_RESET} ${C_ORANGE}%s:${C_RESET}${C_TEXT}%-3s${C_RESET} ${C_PRIMARY}%-30s${C_RESET} ${C_MUTED}%s pane%s${C_RESET}\n" \
-            "$marker" "$session" "$idx" "${label:0:30}" "$panes" "$( [[ "$panes" != "1" ]] && echo "s" )"
+        label=$(_short_label "$path")
+        printf "${C_ORANGE}%-10s${C_RESET} ${C_PRIMARY}%-28s${C_RESET} ${C_MUTED}%s pane%s${C_RESET}\n" \
+            "$target" "${label:0:28}" "$panes" "$([[ "$panes" != "1" ]] && echo "s")"
     done
 }
 
-# ─── Pane list for a session:window ──────────────────────────────────────────
-
-_build_pane_list_for_window() {
-    local target="$1"  # session:window_idx
-    tmux list-panes -t "$target" -F "#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_active}" 2>/dev/null | \
-    while IFS='|' read -r pidx cmd path active; do
-        local marker=" "
-        [[ "$active" == "1" ]] && marker="›"
-        local label
-        label=$(_git_label "$path")
-        printf "${C_MUTED}%s${C_RESET} ${C_ORANGE}%s.${C_RESET}${C_TEXT}%-2s${C_RESET} ${C_PRIMARY}%-28s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
-            "$marker" "$target" "$pidx" "${label:0:28}" "$cmd"
-    done
-}
-
-# ─── Flat pane list (all panes across all sessions) ──────────────────────────
-
-_build_pane_list() {
+_list_panes() {
     tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}|#{pane_current_command}|#{pane_current_path}" 2>/dev/null | \
     while IFS='|' read -r target cmd path; do
         local label
-        label=$(_git_label "$path")
-        printf "${C_ORANGE}%-8s${C_RESET} ${C_PRIMARY}%-32s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
-            "$target" "${label:0:32}" "$cmd"
+        label=$(_short_label "$path")
+        printf "${C_ORANGE}%-10s${C_RESET} ${C_PRIMARY}%-28s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
+            "$target" "${label:0:28}" "$cmd"
     done
 }
 
-# ─── Level 1: Sessions ───────────────────────────────────────────────────────
-
-do_sessions() {
-    local formatted
-    formatted=$(_build_session_list)
-    [[ -z "$formatted" ]] && exit 0
-
-    local choice
-    choice=$(echo "$formatted" | \
-        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME $FZF_NAV \
-            --prompt="session ❯ " \
-            --header=$'Sessions' \
-            --border-label=" enter → windows · ctrl-s switch · ctrl-r refresh · shift-↑↓ preview · esc quit " \
-            --border-label-pos=0:bottom \
-            --preview='
-                s=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
-                printf "\033[38;5;214m═══ %s ═══\033[0m\n" "$s"
-                echo ""
-                tmux list-windows -t "$s" -F "  \033[38;5;214m#I\033[0m  #W  (\033[38;5;246m#{window_panes} panes\033[0m)" 2>/dev/null
-                echo ""
-                echo -e "\033[38;5;238m────────────────────────────────────────\033[0m"
-                '"$CTX_BIN"' "$s:0.0" 2>/dev/null | tail -n +7
-            ' \
-            --preview-window=right:50% \
-            --expect=ctrl-s \
-            --bind="ctrl-r:reload($0 _session_list)")
-
-    [[ -z "$choice" ]] && exit 0
-
-    local key action_target
-    key=$(echo "$choice" | head -1)
-    action_target=$(echo "$choice" | tail -1 | _strip_ansi | awk '{print $1}')
-    [[ -z "$action_target" ]] && exit 0
-
-    if [[ "$key" == "ctrl-s" ]]; then
-        tmux switch-client -t "$action_target"
-    else
-        do_windows "$action_target"
+_short_label() {
+    local path="$1"
+    if git -C "$path" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
+        local branch
+        branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "")
+        if [[ -n "$branch" ]]; then
+            local root
+            root=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null || echo "")
+            if [[ "$root" == *".worktrees/"* ]]; then
+                echo "◆ $branch"
+            else
+                echo " $branch"
+            fi
+            return
+        fi
     fi
+    echo "${path/#$HOME/\~}" | rev | cut -d/ -f1-2 | rev
 }
 
-# ─── Level 2: Windows (for a session) ────────────────────────────────────────
+# ─── Main navigator ─────────────────────────────────────────────────────────
 
-do_windows() {
-    local session="$1"
-    local formatted
-    formatted=$(_build_window_list "$session")
-    [[ -z "$formatted" ]] && exit 0
-
+do_navigate() {
     local choice
-    choice=$(echo "$formatted" | \
-        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME $FZF_NAV \
-            --prompt="window ❯ " \
-            --header="$session → Windows" \
-            --border-label=" enter → panes · ctrl-s switch · ctrl-r refresh · esc ← back " \
+    choice=$(_list_panes | \
+        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
+            --prompt="❯ " \
+            --header=$'ctrl-s sessions · ctrl-w windows · ctrl-p panes' \
+            --border-label=" enter switch · ctrl-k kill · shift-↑↓ scroll preview · esc quit " \
             --border-label-pos=0:bottom \
             --preview='
-                target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$2}" | tr -d "›")
-                printf "\033[38;5;214m═══ %s ═══\033[0m\n\n" "$target"
-                tmux list-panes -t "$target" -F "  \033[38;5;214m.#{pane_index}\033[0m  #{pane_current_command}  \033[38;5;246m#{pane_current_path}\033[0m" 2>/dev/null
-                echo ""
-                echo -e "\033[38;5;238m────────────────────────────────────────\033[0m"
-                first_pane=$(tmux list-panes -t "$target" -F "#{session_name}:#{window_index}.#{pane_index}" 2>/dev/null | head -1)
-                '"$CTX_BIN"' "$first_pane" 2>/dev/null | tail -n +7
-            ' \
-            --preview-window=right:50% \
-            --expect=ctrl-s \
-            --bind="ctrl-r:reload($0 _window_list $session)")
-
-    [[ -z "$choice" ]] && exit 0
-
-    local key line
-    key=$(echo "$choice" | head -1)
-    line=$(echo "$choice" | tail -1 | _strip_ansi)
-    # Extract "session:idx" from the line (e.g. "› main:0")
-    local win_target
-    win_target=$(echo "$line" | awk '{print $2}' | tr -d "›")
-    [[ -z "$win_target" ]] && exit 0
-
-    if [[ "$key" == "ctrl-s" ]]; then
-        tmux select-window -t "$win_target"
-        tmux switch-client -t "$session"
-    else
-        do_panes_in_window "$win_target"
-    fi
-}
-
-# ─── Level 3: Panes (for a session:window) ───────────────────────────────────
-
-do_panes_in_window() {
-    local win_target="$1"  # e.g. main:0
-    local session="${win_target%%:*}"
-    local formatted
-    formatted=$(_build_pane_list_for_window "$win_target")
-    [[ -z "$formatted" ]] && exit 0
-
-    local choice
-    choice=$(echo "$formatted" | \
-        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME $FZF_NAV \
-            --prompt="pane ❯ " \
-            --header="$win_target → Panes" \
-            --border-label=" enter focus pane · ctrl-r refresh · shift-↑↓ preview · esc ← back " \
-            --border-label-pos=0:bottom \
-            --preview='
-                target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$2}" | tr -d "›")
+                target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
                 '"$CTX_BIN"' "$target" 2>/dev/null
             ' \
             --preview-window=right:50% \
-            --bind="ctrl-r:reload($0 _pane_list_win $win_target)")
+            --bind="ctrl-s:change-prompt(session ❯ )+reload($0 _sessions)" \
+            --bind="ctrl-w:change-prompt(window ❯ )+reload($0 _windows)" \
+            --bind="ctrl-p:change-prompt(❯ )+reload($0 _panes)" \
+            --bind="ctrl-k:execute-silent(tmux kill-pane -t \$(echo {} | sed 's/\x1b\[[0-9;]*m//g' | awk '{print \$1}') 2>/dev/null)+reload($0 _panes)" \
+            --bind="shift-up:preview-up,shift-down:preview-down" \
+            --bind="shift-left:preview-page-up,shift-right:preview-page-down" \
+            --bind="ctrl-r:reload($0 _panes)")
 
-    [[ -z "$choice" ]] && exit 0
-
-    local pane_target
-    pane_target=$(echo "$choice" | _strip_ansi | awk '{print $2}' | tr -d "›")
-    [[ -z "$pane_target" ]] && exit 0
-
-    tmux select-pane -t "$pane_target" 2>/dev/null
-    tmux select-window -t "$win_target" 2>/dev/null
-    tmux switch-client -t "$session" 2>/dev/null || true
-}
-
-# ─── Flat pane browser (all panes, no hierarchy) ─────────────────────────────
-
-do_panes_flat() {
-    local formatted
-    formatted=$(_build_pane_list)
-    [[ -z "$formatted" ]] && exit 0
-
-    local choice
-    choice=$(echo "$formatted" | \
-        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME $FZF_NAV \
-            --prompt="pane ❯ " \
-            --header=$'All Panes' \
-            --border-label=" enter focus · ctrl-r refresh · shift-↑↓ preview · esc quit " \
-            --border-label-pos=0:bottom \
-            --preview='target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}"); '"$CTX_BIN"' "$target" 2>/dev/null' \
-            --preview-window=right:50% \
-            --bind="ctrl-r:reload($0 _pane_list)")
     [[ -z "$choice" ]] && exit 0
 
     local target
-    target=$(echo "$choice" | _strip_ansi | awk '{print $1}')
-    tmux select-pane -t "$target" 2>/dev/null
-    tmux switch-client -t "${target%%.*}" 2>/dev/null || true
+    target=$(echo "$choice" | sed 's/\x1b\[[0-9;]*m//g' | awk '{print $1}')
+    [[ -z "$target" ]] && exit 0
+
+    # Switch to the target (works for session, session:window, or session:window.pane)
+    if [[ "$target" == *"."* ]]; then
+        tmux select-pane -t "$target" 2>/dev/null
+        tmux select-window -t "${target%.*}" 2>/dev/null
+        tmux switch-client -t "${target%%:*}" 2>/dev/null || true
+    elif [[ "$target" == *":"* ]]; then
+        tmux select-window -t "$target" 2>/dev/null
+        tmux switch-client -t "${target%%:*}" 2>/dev/null || true
+    else
+        tmux switch-client -t "$target" 2>/dev/null || true
+    fi
 }
 
-# ─── Action handlers ─────────────────────────────────────────────────────────
+# ─── Dispatch ────────────────────────────────────────────────────────────────
 
-do_create() {
-    printf "Session name: "
-    read -r name
-    [[ -z "$name" ]] && exit 0
-
-    printf "Purpose (optional): "
-    read -r purpose
-
-    printf "Directory (optional): "
-    read -r dir
-
-    local cmd="$TMX create \"$name\""
-    [[ -n "$purpose" ]] && cmd+=" --purpose \"$purpose\""
-    [[ -n "$dir" ]] && cmd+=" --dir \"$dir\""
-
-    eval "$cmd"
-    sleep 0.5
-}
-
-do_kill() {
-    local sessions
-    sessions=$(tmux list-sessions -F "#{session_name}" 2>/dev/null)
-    [[ -z "$sessions" ]] && exit 0
-
-    local session
-    session=$(echo "$sessions" | \
-        fzf --height=100% --layout=reverse --border=rounded $FZF_THEME \
-            --prompt="kill ❯ " --header="Kill session" \
-            --border-label=" enter confirm · esc cancel " --border-label-pos=0:bottom)
-    [[ -z "$session" ]] && exit 0
-
-    tmux kill-session -t "$session"
-    echo "Killed: $session"
-    sleep 0.3
-}
-
-# ─── Top-level menu ──────────────────────────────────────────────────────────
-
-do_menu() {
-    local action
-    action=$(printf "sessions\nall-panes\ncreate\nkill\nsnapshot" | \
-        fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
-            --prompt=" ❯ " \
-            --header=$'Session Manager' \
-            --border-label=" ↑↓ navigate · enter select · esc quit " \
-            --border-label-pos=0:bottom \
-            --preview='case {} in
-                sessions)  tmux list-sessions 2>/dev/null ;;
-                all-panes) tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  #{pane_current_command}  #{pane_current_path}" 2>/dev/null ;;
-                create)    echo "Create a new named session" ;;
-                kill)      echo "Kill a session" ;;
-                snapshot)  echo "Snapshot all session state" ;;
-            esac' \
-            --preview-window=right:50%)
-
-    [[ -z "$action" ]] && exit 0
-
-    case "$action" in
-        sessions)  do_sessions ;;
-        all-panes) do_panes_flat ;;
-        create)    do_create ;;
-        kill)      do_kill ;;
-        snapshot)  $TMX snapshot; sleep 0.3 ;;
-    esac
-}
-
-# ─── Main dispatch ───────────────────────────────────────────────────────────
-
-MODE="${1:-menu}"
-
-case "$MODE" in
-    menu)            do_menu ;;
-    sessions)        do_sessions ;;
-    switch)          do_sessions ;;
-    panes)           do_panes_flat ;;
-    _session_list)   _build_session_list ;;
-    _window_list)    _build_window_list "${2:?}" ;;
-    _pane_list_win)  _build_pane_list_for_window "${2:?}" ;;
-    _pane_list)      _build_pane_list ;;
+case "${1:-nav}" in
+    nav|menu|switch|panes|sessions)
+        do_navigate ;;
+    _sessions)
+        _list_sessions ;;
+    _windows)
+        _list_windows ;;
+    _panes)
+        _list_panes ;;
     *)
-        echo "Unknown mode: $MODE"
+        echo "Usage: tmux-mgr-fzf [nav|_sessions|_windows|_panes]"
         exit 1 ;;
 esac
