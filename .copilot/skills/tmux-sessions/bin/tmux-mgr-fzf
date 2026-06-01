@@ -36,8 +36,8 @@ _list_windows() {
     while IFS='|' read -r target wname panes path; do
         local label
         label=$(_short_label "$path")
-        printf "${C_ORANGE}%-10s${C_RESET} ${C_PRIMARY}%-28s${C_RESET} ${C_MUTED}%s pane%s${C_RESET}\n" \
-            "$target" "${label:0:28}" "$panes" "$([[ "$panes" != "1" ]] && echo "s")"
+        printf "${C_ORANGE}%-10s${C_RESET} ${C_PRIMARY}%s${C_RESET} ${C_MUTED}(%s pane%s)${C_RESET}\n" \
+            "$target" "$label" "$panes" "$([[ "$panes" != "1" ]] && echo "s")"
     done
 }
 
@@ -46,8 +46,8 @@ _list_panes() {
     while IFS='|' read -r target cmd path; do
         local label
         label=$(_short_label "$path")
-        printf "${C_ORANGE}%-10s${C_RESET} ${C_PRIMARY}%-28s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
-            "$target" "${label:0:28}" "$cmd"
+        printf "${C_ORANGE}%-10s${C_RESET} ${C_PRIMARY}%s${C_RESET} ${C_MUTED}(%s)${C_RESET}\n" \
+            "$target" "$label" "$cmd"
     done
 }
 
@@ -67,7 +67,7 @@ _short_label() {
             return
         fi
     fi
-    echo "${path/#$HOME/\~}" | rev | cut -d/ -f1-2 | rev
+    echo "${path/#$HOME/~}" | rev | cut -d/ -f1-2 | rev
 }
 
 # ─── Main navigator ─────────────────────────────────────────────────────────
