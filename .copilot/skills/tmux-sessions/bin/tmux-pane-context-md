@@ -2,11 +2,12 @@
 # tmux-pane-context-md — Generates a markdown file from pane context
 # and opens it in vim (read-only). Used as an fzf keybind action.
 #
-# Usage: tmux-pane-context-md <session:window.pane>
+# Usage: tmux-pane-context-md <session:window.pane> [--stdout]
 
 set -euo pipefail
 
-TARGET="${1:?Usage: tmux-pane-context-md <target>}"
+TARGET="${1:?Usage: tmux-pane-context-md <target> [--stdout]}"
+STDOUT_MODE="${2:-}"
 DB="$HOME/.copilot/session-store.db"
 TMPFILE="/tmp/tmux-context-${TARGET//[:.]/-}.md"
 
@@ -127,5 +128,9 @@ if os.path.exists(db_path) and pane_path:
 print("\n".join(lines))
 PYEOF
 
-# Open in vim read-only with markdown filetype
-vim -R -c "set ft=markdown | set conceallevel=2 | set wrap | set linebreak" "$TMPFILE"
+# Either print to stdout or open in vim
+if [[ "$STDOUT_MODE" == "--stdout" ]]; then
+    cat "$TMPFILE"
+else
+    vim -R -c "set ft=markdown | set conceallevel=2 | set wrap | set linebreak" "$TMPFILE"
+fi
