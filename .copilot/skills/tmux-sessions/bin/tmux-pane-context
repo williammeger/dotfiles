@@ -10,13 +10,12 @@ set -euo pipefail
 TARGET="${1:?Usage: tmux-pane-context <target>}"
 DB="$HOME/.copilot/session-store.db"
 
-# ─── Theme (from tmux conf: 214, 232, 235, 238, 246, 252, 255) ──────────────
-C_ORANGE=$'\033[38;5;214m'  # colour214 — primary accent
-C_MUTED=$'\033[38;5;246m'   # colour246 — status bar fg
-C_BRIGHT=$'\033[38;5;255m'  # colour255 — active window text
-C_DIM=$'\033[38;5;238m'     # colour238 — pane borders
-C_BRANCH=$'\033[38;5;108m'  # colour108 — muted sage green (branches)
-C_DONE=$'\033[38;5;108m'    # colour108 — same green (completed items)
+# ─── Theme (from tmux conf — dark foregrounds for light terminal bg) ─────────
+# Palette: 214 (orange), 232 (black), 238 (dark gray), 246 (mid gray)
+C_ORANGE=$'\033[38;5;214m'  # colour214 — accent
+C_PRIMARY=$'\033[38;5;232m' # colour232 — near-black (prominent: titles, branches)
+C_TEXT=$'\033[38;5;238m'    # colour238 — dark gray (standard text)
+C_MUTED=$'\033[38;5;246m'   # colour246 — mid gray (less prominent: paths, meta)
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
 
@@ -51,28 +50,28 @@ elif [[ -n "$pane_path" ]]; then
 fi
 
 # ─── Render header ───────────────────────────────────────────────────────────
-echo "${C_DIM}┌──────────────────────────────────────────────────────${C_RESET}"
-echo "${C_DIM}│${C_RESET} ${C_ORANGE}${C_BOLD}$TARGET${C_RESET}"
+echo "${C_MUTED}┌──────────────────────────────────────────────────────${C_RESET}"
+echo "${C_MUTED}│${C_RESET} ${C_ORANGE}${C_BOLD}$TARGET${C_RESET}"
 
 if [[ -n "$pane_title" && "$pane_title" != "$pane_cmd" ]]; then
-    echo "${C_DIM}│${C_RESET} ${C_BRIGHT}$pane_title${C_RESET}"
+    echo "${C_MUTED}│${C_RESET} ${C_PRIMARY}$pane_title${C_RESET}"
 fi
 
-echo "${C_DIM}├──────────────────────────────────────────────────────${C_RESET}"
+echo "${C_MUTED}├──────────────────────────────────────────────────────${C_RESET}"
 
 # Branch line
 if [[ -n "$git_branch" ]]; then
-    local_label="${C_BRANCH} $git_branch${C_RESET}"
+    local_label="${C_PRIMARY}${C_BOLD} $git_branch${C_RESET}"
     if [[ -n "$worktree_name" ]]; then
         local_label+="  ${C_MUTED}(worktree)${C_RESET}"
     fi
-    echo "${C_DIM}│${C_RESET} $local_label"
+    echo "${C_MUTED}│${C_RESET} $local_label"
 fi
 
 # Path + command
 short_path=$(echo "$pane_path" | sed "s|$HOME|~|")
-echo "${C_DIM}│${C_RESET} ${C_MUTED}${pane_cmd} @ ${short_path}${C_RESET}"
-echo "${C_DIM}└──────────────────────────────────────────────────────${C_RESET}"
+echo "${C_MUTED}│${C_RESET} ${C_MUTED}${pane_cmd} @ ${short_path}${C_RESET}"
+echo "${C_MUTED}└──────────────────────────────────────────────────────${C_RESET}"
 echo ""
 
 # ─── Session store lookup ────────────────────────────────────────────────────
@@ -81,7 +80,7 @@ if [[ ! -f "$DB" ]]; then
     exit 0
 fi
 
-PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_BRIGHT="$C_BRIGHT" C_DONE="$C_DONE" C_DIM="$C_DIM" C_BOLD="$C_BOLD" C_RESET="$C_RESET" python3 << 'PYEOF'
+PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_PRIMARY="$C_PRIMARY" C_TEXT="$C_TEXT" C_BOLD="$C_BOLD" C_RESET="$C_RESET" python3 << 'PYEOF'
 import sqlite3
 import os
 import sys
@@ -93,9 +92,8 @@ pane_path = os.environ.get("PANE_PATH", "")
 # ANSI from env
 O = os.environ.get("C_ORANGE", "")
 M = os.environ.get("C_MUTED", "")
-B = os.environ.get("C_BRIGHT", "")
-G = os.environ.get("C_DONE", "")
-D = os.environ.get("C_DIM", "")
+P = os.environ.get("C_PRIMARY", "")
+T = os.environ.get("C_TEXT", "")
 BD = os.environ.get("C_BOLD", "")
 R = os.environ.get("C_RESET", "")
 
@@ -143,21 +141,21 @@ cp = conn.execute("""
 
 if cp:
     if cp["title"]:
-        print(f"  {D}──{R} {B}{cp['title']}{R} {D}──{R}")
+        print(f"  {M}──{R} {P}{BD}{cp['title']}{R} {M}──{R}")
         print("")
 
     if cp["overview"]:
         wrapped = textwrap.fill(cp["overview"], width=52,
                                 initial_indent="  ", subsequent_indent="  ")
-        print(f"{M}{wrapped}{R}")
+        print(f"{T}{wrapped}{R}")
         print("")
 
     if cp["work_done"]:
-        print(f"  {G}{BD}DONE:{R}")
+        print(f"  {T}{BD}DONE:{R}")
         for line in cp["work_done"].split("\n")[:6]:
             line = line.strip()
             if line:
-                print(f"  {G}  • {line[:60]}{R}")
+                print(f"  {T}  • {line[:60]}{R}")
         print("")
 
     if cp["next_steps"]:

@@ -10,18 +10,17 @@ TMX="$SKILL_DIR/bin/tmux-mgr"
 CTX_BIN="$SKILL_DIR/bin/tmux-pane-context"
 STATE_FILE="$SKILL_DIR/state.json"
 
-# ─── Theme (from tmux conf: 214, 232, 235, 238, 246, 252, 255) ──────────────
-C_ORANGE=$'\033[38;5;214m'  # colour214 — primary accent
-C_GREEN=$'\033[38;5;108m'   # colour108 — muted sage green (completion/success)
-C_MUTED=$'\033[38;5;246m'   # colour246 — status bar fg
-C_BRIGHT=$'\033[38;5;255m'  # colour255 — active window text
-C_DIM=$'\033[38;5;238m'     # colour238 — pane borders
-C_TEXT=$'\033[38;5;252m'    # colour252 — window status text
+# ─── Theme (from tmux conf — dark foregrounds for light terminal bg) ─────────
+# Palette: 214 (orange accent), 232 (black), 238 (dark gray), 246 (mid gray)
+C_ORANGE=$'\033[38;5;214m'  # colour214 — accent (same as active border/tabs)
+C_PRIMARY=$'\033[38;5;232m' # colour232 — near-black (prominent text: branches)
+C_TEXT=$'\033[38;5;238m'    # colour238 — dark gray (standard body text)
+C_MUTED=$'\033[38;5;246m'   # colour246 — mid gray (less prominent: commands, meta)
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
 
-# ─── FZF common opts (light selection bar; all theme colors stay readable) ────
-FZF_THEME="--color=fg+:232,bg+:252,hl:214,hl+:214,pointer:214,prompt:214,header:246,border:238,info:246"
+# ─── FZF common opts (light selection bar; theme grays stay readable on it) ───
+FZF_THEME="--color=fg+:232,bg+:252,hl:214,hl+:214,pointer:214,prompt:214,header:238,border:246,info:246"
 FZF_NAV="--bind=shift-up:preview-up,shift-down:preview-down --bind=shift-left:preview-page-up,shift-right:preview-page-down"
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -66,7 +65,7 @@ _build_window_list() {
         [[ "$active" == "1" ]] && marker="›"
         local label
         label=$(_git_label "$path")
-        printf "${C_DIM}%s${C_RESET} ${C_ORANGE}%s:${C_RESET}${C_BRIGHT}%-3s${C_RESET} ${C_GREEN}%-30s${C_RESET} ${C_MUTED}%s pane%s${C_RESET}\n" \
+        printf "${C_MUTED}%s${C_RESET} ${C_ORANGE}%s:${C_RESET}${C_TEXT}%-3s${C_RESET} ${C_PRIMARY}%-30s${C_RESET} ${C_MUTED}%s pane%s${C_RESET}\n" \
             "$marker" "$session" "$idx" "${label:0:30}" "$panes" "$( [[ "$panes" != "1" ]] && echo "s" )"
     done
 }
@@ -81,7 +80,7 @@ _build_pane_list_for_window() {
         [[ "$active" == "1" ]] && marker="›"
         local label
         label=$(_git_label "$path")
-        printf "${C_DIM}%s${C_RESET} ${C_ORANGE}%s.${C_RESET}${C_BRIGHT}%-2s${C_RESET} ${C_GREEN}%-28s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
+        printf "${C_MUTED}%s${C_RESET} ${C_ORANGE}%s.${C_RESET}${C_TEXT}%-2s${C_RESET} ${C_PRIMARY}%-28s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
             "$marker" "$target" "$pidx" "${label:0:28}" "$cmd"
     done
 }
@@ -93,7 +92,7 @@ _build_pane_list() {
     while IFS='|' read -r target cmd path; do
         local label
         label=$(_git_label "$path")
-        printf "${C_ORANGE}%-8s${C_RESET} ${C_GREEN}%-32s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
+        printf "${C_ORANGE}%-8s${C_RESET} ${C_PRIMARY}%-32s${C_RESET} ${C_MUTED}%s${C_RESET}\n" \
             "$target" "${label:0:32}" "$cmd"
     done
 }
@@ -116,7 +115,7 @@ do_sessions() {
                 s=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
                 printf "\033[38;5;214m═══ %s ═══\033[0m\n" "$s"
                 echo ""
-                tmux list-windows -t "$s" -F "  \033[38;5;108m#I\033[0m  #W  (\033[38;5;246m#{window_panes} panes\033[0m)" 2>/dev/null
+                tmux list-windows -t "$s" -F "  \033[38;5;214m#I\033[0m  #W  (\033[38;5;246m#{window_panes} panes\033[0m)" 2>/dev/null
                 echo ""
                 echo -e "\033[38;5;238m────────────────────────────────────────\033[0m"
                 '"$CTX_BIN"' "$s:0.0" 2>/dev/null | tail -n +7
@@ -157,7 +156,7 @@ do_windows() {
             --preview='
                 target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$2}" | tr -d "›")
                 printf "\033[38;5;214m═══ %s ═══\033[0m\n\n" "$target"
-                tmux list-panes -t "$target" -F "  \033[38;5;108m.#{pane_index}\033[0m  #{pane_current_command}  \033[38;5;246m#{pane_current_path}\033[0m" 2>/dev/null
+                tmux list-panes -t "$target" -F "  \033[38;5;214m.#{pane_index}\033[0m  #{pane_current_command}  \033[38;5;246m#{pane_current_path}\033[0m" 2>/dev/null
                 echo ""
                 echo -e "\033[38;5;238m────────────────────────────────────────\033[0m"
                 first_pane=$(tmux list-panes -t "$target" -F "#{session_name}:#{window_index}.#{pane_index}" 2>/dev/null | head -1)
