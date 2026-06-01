@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# tmux-pane-context-md — Generates a markdown file from pane context
+# and opens it in vim (read-only). Used as an fzf keybind action.
+#
+# Usage: tmux-pane-context-md <session:window.pane>
+
+set -euo pipefail
+
+TARGET="${1:?Usage: tmux-pane-context-md <target>}"
+DB="$HOME/.copilot/session-store.db"
+TMPFILE="/tmp/tmux-context-${TARGET//[:.]/-}.md"
+
+# ─── Pane metadata ───────────────────────────────────────────────────────────
+pane_path=$(tmux display-message -t "$TARGET" -p "#{pane_current_path}" 2>/dev/null || echo "")
+pane_cmd=$(tmux display-message -t "$TARGET" -p "#{pane_current_command}" 2>/dev/null || echo "")
+
+# ─── Git info ─────────────────────────────────────────────────────────────────
+branch=""
+if [[ -n "$pane_path" ]]; then
+    branch=$(git -C "$pane_path" branch --show-current 2>/dev/null || true)
+fi
+
+# ─── Build markdown ──────────────────────────────────────────────────────────
+python3 << PYEOF > "$TMPFILE"
+import sqlite3
+import os
+import sys
+import subprocess
+
+db_path = "$DB"
+pane_path = """$pane_path"""
+target = "$TARGET"
+branch = """$branch"""
+pane_cmd = "$pane_cmd"
+
+lines = []
+
+# Header
+lines.append(f"# {target}")
+lines.append("")
+if branch:
+    lines.append(f"**Branch:** \`{branch}\`  ")
+lines.append(f"**Path:** \`{pane_path}\`  ")
+lines.append(f"**Command:** {pane_cmd}")
+lines.append("")
+
+# Git log
+try:
+    result = subprocess.run(
+        ["git", "--no-pager", "-C", pane_path, "log", "--oneline", "-5"],
+        capture_output=True, text=True, timeout=2
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        lines.append("## Recent Commits")
+        lines.append("")
+        for c in result.stdout.strip().split("\n"):
+            lines.append(f"- \`{c}\`")
+        lines.append("")
+except Exception:
+    pass
+
+# Session store
+if os.path.exists(db_path) and pane_path:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    session = conn.execute("""
+        SELECT s.id, s.summary, s.cwd, s.updated_at,
+               (SELECT COUNT(*) FROM checkpoints c WHERE c.session_id = s.id) as cp_count
+        FROM sessions s WHERE s.cwd = ?
+        ORDER BY cp_count DESC, s.updated_at DESC LIMIT 1
+    """, (pane_path,)).fetchone()
+
+    if not session:
+        session = conn.execute("""
+            SELECT s.id, s.summary, s.cwd, s.updated_at,
+                   (SELECT COUNT(*) FROM checkpoints c WHERE c.session_id = s.id) as cp_count
+            FROM sessions s
+            WHERE ? LIKE s.cwd || '%' OR s.cwd LIKE ? || '%'
+            ORDER BY cp_count DESC, s.updated_at DESC LIMIT 1
+        """, (pane_path, pane_path)).fetchone()
+
+    if session:
+        lines.append("## Copilot Session")
+        lines.append("")
+        lines.append(f"**{session['summary']}**  ")
+        lines.append(f"*{session['updated_at'][:19].replace('T', ' ')}*")
+        lines.append("")
+
+        cp = conn.execute("""
+            SELECT title, overview, work_done, next_steps
+            FROM checkpoints WHERE session_id = ?
+            ORDER BY checkpoint_number DESC LIMIT 1
+        """, (session["id"],)).fetchone()
+
+        if cp:
+            if cp["title"]:
+                lines.append(f"### {cp['title']}")
+                lines.append("")
+
+            if cp["overview"]:
+                lines.append(cp["overview"])
+                lines.append("")
+
+            if cp["work_done"]:
+                lines.append("### ✓ Done")
+                lines.append("")
+                lines.append(cp["work_done"])
+                lines.append("")
+
+            if cp["next_steps"]:
+                lines.append("### → Next")
+                lines.append("")
+                lines.append(cp["next_steps"])
+        else:
+            turn = conn.execute("""
+                SELECT user_message FROM turns
+                WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1
+            """, (session["id"],)).fetchone()
+            if turn and turn["user_message"]:
+                lines.append("### Initial Ask")
+                lines.append("")
+                lines.append(turn["user_message"][:600])
+
+    conn.close()
+
+print("\n".join(lines))
+PYEOF
+
+# Open in vim read-only with markdown filetype
+vim -R -c "set ft=markdown | set conceallevel=2 | set wrap | set linebreak" "$TMPFILE"

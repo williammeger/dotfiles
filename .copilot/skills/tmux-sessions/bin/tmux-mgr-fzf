@@ -7,6 +7,7 @@ set -euo pipefail
 
 SKILL_DIR="${TMUX_MGR_DIR:-$HOME/.copilot/skills/tmux-sessions}"
 CTX_BIN="$SKILL_DIR/bin/tmux-pane-context"
+MD_BIN="$SKILL_DIR/bin/tmux-pane-context-md"
 
 # ─── Theme (from tmux conf: 214, 232, 238, 246) ─────────────────────────────
 C_ORANGE=$'\033[38;5;214m'
@@ -76,8 +77,8 @@ do_navigate() {
     choice=$(_list_panes | \
         fzf --ansi --height=100% --layout=reverse --border=rounded $FZF_THEME \
             --prompt="❯ " \
-            --header=$'ctrl-s sessions · ctrl-w windows · ctrl-p panes' \
-            --border-label=" enter switch · ctrl-k kill · shift-↑↓ scroll preview · esc quit " \
+            --header=$'ctrl-s sessions · ctrl-w windows · ctrl-p panes · ctrl-v vim' \
+            --border-label=" enter switch · ctrl-k kill · ctrl-v open in vim · esc quit " \
             --border-label-pos=0:bottom \
             --preview='
                 target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
@@ -88,6 +89,7 @@ do_navigate() {
             --bind="ctrl-w:change-prompt(window ❯ )+reload($0 _windows)" \
             --bind="ctrl-p:change-prompt(❯ )+reload($0 _panes)" \
             --bind="ctrl-k:execute-silent(tmux kill-pane -t \$(echo {} | sed 's/\x1b\[[0-9;]*m//g' | awk '{print \$1}') 2>/dev/null)+reload($0 _panes)" \
+            --bind="ctrl-v:execute(target=\$(echo {} | sed 's/\x1b\[[0-9;]*m//g' | awk '{print \$1}'); $MD_BIN \"\$target\")" \
             --bind="shift-up:preview-up,shift-down:preview-down" \
             --bind="shift-left:preview-page-up,shift-right:preview-page-down" \
             --bind="ctrl-r:reload($0 _panes)")
