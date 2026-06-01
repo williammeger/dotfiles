@@ -82,7 +82,7 @@ do_navigate() {
             --border-label-pos=0:bottom \
             --preview='
                 target=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
-                CLICOLOR_FORCE=1 '"$MD_BIN"' "$target" --stdout 2>/dev/null | CLICOLOR_FORCE=1 glow -s light -w 0
+                '"$CTX_BIN"' "$target" 2>/dev/null
             ' \
             --preview-window=right:50% \
             --bind="ctrl-s:change-prompt(session ❯ )+reload($0 _sessions)" \

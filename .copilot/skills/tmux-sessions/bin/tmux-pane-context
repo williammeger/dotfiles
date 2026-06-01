@@ -84,16 +84,11 @@ if [[ ! -f "$DB" ]]; then
 fi
 
 PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_PRIMARY="$C_PRIMARY" C_TEXT="$C_TEXT" C_DONE="$C_DONE" C_NEXT="$C_NEXT" C_BOLD="$C_BOLD" C_RESET="$C_RESET" python3 << 'PYEOF'
-import sqlite3
-import os
-import sys
-import subprocess
-import re
+import sqlite3, os, sys, re
 
 db_path = os.path.expanduser("~/.copilot/session-store.db")
 pane_path = os.environ.get("PANE_PATH", "")
 
-# ANSI from env
 O = os.environ.get("C_ORANGE", "")
 M = os.environ.get("C_MUTED", "")
 P = os.environ.get("C_PRIMARY", "")
@@ -103,76 +98,27 @@ N = os.environ.get("C_NEXT", "")
 BD = os.environ.get("C_BOLD", "")
 R = os.environ.get("C_RESET", "")
 
-WIDTH = 80
-
-def sentences(text, color, label="", label_color=""):
-    """Render text one sentence per line, in consistent color."""
-    # Strip any embedded ANSI escapes from raw data
+def clean(text):
     text = re.sub(r'\x1b\[[0-9;]*m', '', text)
-    clean = " ".join(text.replace("`", "").replace("**", "").split())
-    # Split on sentence boundaries (period/!/? followed by space and uppercase)
-    parts = re.split(r'(?<=[.!?])\s+(?=[A-Z\[])', clean)
-    if label:
-        lc = label_color or color
-        print(f"  {lc}{BD}{label}{R}")
-    for s in parts:
-        s = s.strip().lstrip("- •*[]x0-9.) ")
-        if s:
-            # Wrap long sentences at WIDTH
-            while len(s) > WIDTH:
-                cut = s.rfind(" ", 0, WIDTH)
-                if cut == -1:
-                    cut = WIDTH
-                print(f"  {color}{s[:cut]}{R}")
-                s = s[cut:].lstrip()
-            if s:
-                print(f"  {color}{s}{R}")
+    return text.replace("`", "").replace("**", "").strip()
 
-def git_log(path, count=3):
-    """Get recent git commits for the path."""
-    try:
-        result = subprocess.run(
-            ["git", "--no-pager", "-C", path, "log", "--oneline", f"-{count}"],
-            capture_output=True, text=True, timeout=2
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")
-    except Exception:
-        pass
-    return []
-
-# ─── Git history ──────────────────────────────────────────────────────────────
-commits = git_log(pane_path) if pane_path else []
-if commits:
-    print(f"  {M}recent commits{R}")
-    for c in commits:
-        print(f"  {T}{c}{R}")
-    print("")
-
-# ─── Session store ────────────────────────────────────────────────────────────
 if not pane_path or not os.path.exists(db_path):
-    if not commits:
-        print(f"  {M}(no session data){R}")
-    print("")
-    print(f"  {M}{'─' * 50}{R}")
-    print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
+    print(f"  {M}(no session data){R}")
     sys.exit(0)
 
 conn = sqlite3.connect(db_path)
 conn.row_factory = sqlite3.Row
 
-# Prefer sessions with checkpoints, then fall back to most recent
 session = conn.execute("""
-    SELECT s.id, s.summary, s.cwd, s.updated_at,
+    SELECT s.id, s.summary, s.updated_at,
            (SELECT COUNT(*) FROM checkpoints c WHERE c.session_id = s.id) as cp_count
     FROM sessions s WHERE s.cwd = ?
     ORDER BY cp_count DESC, s.updated_at DESC LIMIT 1
 """, (pane_path,)).fetchone()
 
-# Prefix match (worktrees, subdirs)
 if not session:
     session = conn.execute("""
-        SELECT s.id, s.summary, s.cwd, s.updated_at,
+        SELECT s.id, s.summary, s.updated_at,
                (SELECT COUNT(*) FROM checkpoints c WHERE c.session_id = s.id) as cp_count
         FROM sessions s
         WHERE ? LIKE s.cwd || '%' OR s.cwd LIKE ? || '%'
@@ -180,54 +126,38 @@ if not session:
     """, (pane_path, pane_path)).fetchone()
 
 if not session:
-    print(f"  {M}(no Copilot session for this directory){R}")
-    print("")
-    print(f"  {M}{'─' * 50}{R}")
-    print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
+    print(f"  {M}(no session){R}")
     sys.exit(0)
 
-session_id = session["id"]
-summary = session["summary"] or "(no summary)"
-updated = session["updated_at"] or ""
-
-print(f"  {P}{BD}{summary}{R}")
-print(f"  {M}{updated[:19].replace('T', ' ')}{R}")
+sid = session["id"]
+print(f"  {P}{BD}{session['summary'] or '(untitled)'}{R}")
+print(f"  {M}{(session['updated_at'] or '')[:16].replace('T', ' ')}{R}")
 print("")
 
-# Latest checkpoint
 cp = conn.execute("""
-    SELECT title, overview, work_done, next_steps
+    SELECT title, overview, next_steps
     FROM checkpoints WHERE session_id = ?
     ORDER BY checkpoint_number DESC LIMIT 1
-""", (session_id,)).fetchone()
+""", (sid,)).fetchone()
 
 if cp:
     if cp["title"]:
-        print(f"  {M}── {cp['title']} ──{R}")
+        print(f"  {T}{cp['title']}{R}")
         print("")
-
-    if cp["overview"]:
-        sentences(cp["overview"], T)
-        print("")
-
-    if cp["work_done"]:
-        sentences(cp["work_done"], T, label="✓ Done", label_color=G)
-        print("")
-
     if cp["next_steps"]:
-        sentences(cp["next_steps"], T, label="→ Next", label_color=N)
+        print(f"  {G}{BD}next:{R}")
+        text = clean(cp["next_steps"])
+        for line in text.split("\n")[:5]:
+            line = line.strip().lstrip("- •*[]0-9.) ")
+            if line:
+                print(f"  {T}{line}{R}")
 else:
     turn = conn.execute("""
         SELECT user_message FROM turns
         WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1
-    """, (session_id,)).fetchone()
+    """, (sid,)).fetchone()
     if turn and turn["user_message"]:
-        sentences(turn["user_message"][:400], T, label="ask")
+        print(f"  {M}ask:{R} {T}{clean(turn['user_message'])[:120]}{R}")
 
 conn.close()
-
-# Help — always visible at the bottom
-print("")
-print(f"  {M}{'─' * 50}{R}")
-print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
 PYEOF
