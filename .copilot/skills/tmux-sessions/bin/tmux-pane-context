@@ -11,11 +11,14 @@ TARGET="${1:?Usage: tmux-pane-context <target>}"
 DB="$HOME/.copilot/session-store.db"
 
 # ─── Theme (from tmux conf — dark foregrounds for light terminal bg) ─────────
-# Palette: 214 (orange), 232 (black), 238 (dark gray), 246 (mid gray)
+# Palette: 214 (orange accent), 232 (black), 238 (dark gray), 246 (mid gray)
+# Semantic: 65 (muted green — done), 130 (amber — remaining)
 C_ORANGE=$'\033[38;5;214m'  # colour214 — accent
 C_PRIMARY=$'\033[38;5;232m' # colour232 — near-black (prominent: titles, branches)
 C_TEXT=$'\033[38;5;238m'    # colour238 — dark gray (standard text)
 C_MUTED=$'\033[38;5;246m'   # colour246 — mid gray (less prominent: paths, meta)
+C_DONE=$'\033[38;5;65m'    # muted green — completed items
+C_NEXT=$'\033[38;5;130m'   # amber — remaining/next steps
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
 
@@ -80,11 +83,10 @@ if [[ ! -f "$DB" ]]; then
     exit 0
 fi
 
-PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_PRIMARY="$C_PRIMARY" C_TEXT="$C_TEXT" C_BOLD="$C_BOLD" C_RESET="$C_RESET" python3 << 'PYEOF'
+PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_PRIMARY="$C_PRIMARY" C_TEXT="$C_TEXT" C_DONE="$C_DONE" C_NEXT="$C_NEXT" C_BOLD="$C_BOLD" C_RESET="$C_RESET" python3 << 'PYEOF'
 import sqlite3
 import os
 import sys
-import textwrap
 
 db_path = os.path.expanduser("~/.copilot/session-store.db")
 pane_path = os.environ.get("PANE_PATH", "")
@@ -94,6 +96,8 @@ O = os.environ.get("C_ORANGE", "")
 M = os.environ.get("C_MUTED", "")
 P = os.environ.get("C_PRIMARY", "")
 T = os.environ.get("C_TEXT", "")
+G = os.environ.get("C_DONE", "")
+N = os.environ.get("C_NEXT", "")
 BD = os.environ.get("C_BOLD", "")
 R = os.environ.get("C_RESET", "")
 
@@ -104,20 +108,22 @@ if not pane_path or not os.path.exists(db_path):
 conn = sqlite3.connect(db_path)
 conn.row_factory = sqlite3.Row
 
-# Exact cwd match
+# Prefer sessions with checkpoints, then fall back to most recent
 session = conn.execute("""
-    SELECT id, summary, cwd, updated_at
-    FROM sessions WHERE cwd = ?
-    ORDER BY updated_at DESC LIMIT 1
+    SELECT s.id, s.summary, s.cwd, s.updated_at,
+           (SELECT COUNT(*) FROM checkpoints c WHERE c.session_id = s.id) as cp_count
+    FROM sessions s WHERE s.cwd = ?
+    ORDER BY cp_count DESC, s.updated_at DESC LIMIT 1
 """, (pane_path,)).fetchone()
 
 # Prefix match (worktrees, subdirs)
 if not session:
     session = conn.execute("""
-        SELECT id, summary, cwd, updated_at
-        FROM sessions
-        WHERE ? LIKE cwd || '%' OR cwd LIKE ? || '%'
-        ORDER BY updated_at DESC LIMIT 1
+        SELECT s.id, s.summary, s.cwd, s.updated_at,
+               (SELECT COUNT(*) FROM checkpoints c WHERE c.session_id = s.id) as cp_count
+        FROM sessions s
+        WHERE ? LIKE s.cwd || '%' OR s.cwd LIKE ? || '%'
+        ORDER BY cp_count DESC, s.updated_at DESC LIMIT 1
     """, (pane_path, pane_path)).fetchone()
 
 if not session:
@@ -145,35 +151,38 @@ if cp:
         print("")
 
     if cp["overview"]:
-        wrapped = textwrap.fill(cp["overview"], width=52,
-                                initial_indent="  ", subsequent_indent="  ")
-        print(f"{T}{wrapped}{R}")
+        # Bullet the overview into short points
+        overview = cp["overview"].strip()
+        lines = [l.strip() for l in overview.replace(". ", ".\n").split("\n") if l.strip()]
+        for line in lines[:4]:
+            print(f"  {T}• {line[:56]}{R}")
         print("")
 
     if cp["work_done"]:
-        print(f"  {T}{BD}DONE:{R}")
+        print(f"  {G}{BD}✓ Done{R}")
         for line in cp["work_done"].split("\n")[:6]:
-            line = line.strip()
-            if line:
-                print(f"  {T}  • {line[:60]}{R}")
+            line = line.strip().lstrip("- •*[]x ").replace("`", "")
+            if line and len(line) > 2:
+                print(f"  {G}  • {line[:54]}{R}")
         print("")
 
     if cp["next_steps"]:
-        print(f"  {O}{BD}NEXT:{R}")
+        print(f"  {N}{BD}→ Next{R}")
         for line in cp["next_steps"].split("\n")[:4]:
-            line = line.strip()
-            if line:
-                print(f"  {O}  → {line[:60]}{R}")
+            line = line.strip().lstrip("- •*[]x ").replace("`", "")
+            if line and len(line) > 2:
+                print(f"  {N}  • {line[:54]}{R}")
 else:
     turn = conn.execute("""
         SELECT user_message FROM turns
         WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1
     """, (session_id,)).fetchone()
     if turn and turn["user_message"]:
-        msg = turn["user_message"][:180]
-        wrapped = textwrap.fill(msg, width=52, initial_indent="  ", subsequent_indent="  ")
+        msg = turn["user_message"][:200]
+        lines = [l.strip() for l in msg.split("\n") if l.strip()]
         print(f"  {M}ASK:{R}")
-        print(f"{M}{wrapped}{R}")
+        for line in lines[:4]:
+            print(f"  {T}  {line[:54]}{R}")
 
 conn.close()
 PYEOF
