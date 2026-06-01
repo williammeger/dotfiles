@@ -88,7 +88,7 @@ do_navigate() {
             --bind="ctrl-s:change-prompt(session ❯ )+reload($0 _sessions)" \
             --bind="ctrl-w:change-prompt(window ❯ )+reload($0 _windows)" \
             --bind="ctrl-p:change-prompt(❯ )+reload($0 _panes)" \
-            --bind="ctrl-k:execute-silent(tmux kill-pane -t \$(echo {} | sed 's/\x1b\[[0-9;]*m//g' | awk '{print \$1}') 2>/dev/null)+reload($0 _panes)" \
+            --bind="ctrl-k:execute(target=\$(echo {} | sed 's/\x1b\[[0-9;]*m//g' | awk '{print \$1}'); printf '\\n  Kill pane %s? [y/N] ' \"\$target\"; read -r ans </dev/tty; [ \"\$ans\" = y ] && tmux kill-pane -t \"\$target\" 2>/dev/null)+reload($0 _panes)" \
             --bind="ctrl-v:execute(target=\$(echo {} | sed 's/\x1b\[[0-9;]*m//g' | awk '{print \$1}'); $MD_BIN \"\$target\")" \
             --bind="shift-up:preview-up,shift-down:preview-down" \
             --bind="shift-left:preview-page-up,shift-right:preview-page-down" \
