@@ -8,11 +8,11 @@ SKILL_DIR="${TMUX_MGR_DIR:-$HOME/.copilot/skills/tmux-sessions}"
 TMX="$SKILL_DIR/bin/tmux-mgr"
 STATE_FILE="$SKILL_DIR/state.json"
 
-# ─── Theme (dark foregrounds for light terminal bg) ──────────────────────────
-C_ORANGE=$'\033[38;5;166m'  # darker orange — accent, always legible
-C_MUTED=$'\033[38;5;241m'   # dark gray — secondary text
-C_BRIGHT=$'\033[38;5;235m'  # near-black — primary text
-C_DIM=$'\033[38;5;245m'     # mid gray — borders, separators
+# ─── Theme (dark foregrounds for light bg; bright enough for light selection) ─
+C_ORANGE=$'\033[38;5;214m'  # bright orange — accent (from tmux theme)
+C_MUTED=$'\033[38;5;240m'   # dark gray — secondary text
+C_BRIGHT=$'\033[38;5;236m'  # near-black — primary text
+C_DIM=$'\033[38;5;243m'     # mid gray — borders, separators
 C_BRANCH=$'\033[38;5;30m'   # teal — branch names (dark, saturated)
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'
@@ -65,8 +65,8 @@ _build_pane_list() {
     done
 }
 
-# ─── FZF common opts (no bg override — inherits terminal; dark selection bar) ─
-FZF_THEME="--color=fg+:255,bg+:236,hl:166,hl+:166,pointer:166,prompt:166,header:240,border:245,info:245"
+# ─── FZF common opts (light selection bar so dark ANSI text stays readable) ───
+FZF_THEME="--color=fg+:232,bg+:252,hl:214,hl+:214,pointer:214,prompt:214,header:240,border:243,info:243"
 
 # ─── Action picker (top-level menu) ──────────────────────────────────────────
 
@@ -163,10 +163,10 @@ do_quick_switch() {
             --border-label-pos=0:bottom \
             --preview='
                 session=$(echo {} | sed "s/\x1b\[[0-9;]*m//g" | awk "{print \$1}")
-                printf "\033[38;5;166m═══ %s ═══\033[0m\n\n" "$session"
+                printf "\033[38;5;214m═══ %s ═══\033[0m\n\n" "$session"
                 tmux list-panes -t "$session" -F "  .#{pane_index}  #{pane_title}" 2>/dev/null
                 echo ""
-                echo -e "\033[38;5;245m─────────────────────────────────────────\033[0m"
+                echo -e "\033[38;5;243m─────────────────────────────────────────\033[0m"
                 '"$ctx_bin"' "$session:0.0" 2>/dev/null | tail -n +7
             ' \
             --preview-window=right:50% \
