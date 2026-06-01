@@ -87,7 +87,8 @@ PANE_PATH="$pane_path" C_ORANGE="$C_ORANGE" C_MUTED="$C_MUTED" C_PRIMARY="$C_PRI
 import sqlite3
 import os
 import sys
-import textwrap
+import subprocess
+import re
 
 db_path = os.path.expanduser("~/.copilot/session-store.db")
 pane_path = os.environ.get("PANE_PATH", "")
@@ -102,16 +103,59 @@ N = os.environ.get("C_NEXT", "")
 BD = os.environ.get("C_BOLD", "")
 R = os.environ.get("C_RESET", "")
 
-WIDTH = 52
+WIDTH = 80
 
-def prose(text, color, indent="  "):
-    """Render text as wrapped prose with consistent color."""
-    clean = " ".join(text.replace("`", "").split())
-    for line in textwrap.wrap(clean, width=WIDTH):
-        print(f"{indent}{color}{line}{R}")
+def sentences(text, color, label="", label_color=""):
+    """Render text one sentence per line, in consistent color."""
+    # Strip any embedded ANSI escapes from raw data
+    text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+    clean = " ".join(text.replace("`", "").replace("**", "").split())
+    # Split on sentence boundaries (period/!/? followed by space and uppercase)
+    parts = re.split(r'(?<=[.!?])\s+(?=[A-Z\[])', clean)
+    if label:
+        lc = label_color or color
+        print(f"  {lc}{BD}{label}{R}")
+    for s in parts:
+        s = s.strip().lstrip("- •*[]x0-9.) ")
+        if s:
+            # Wrap long sentences at WIDTH
+            while len(s) > WIDTH:
+                cut = s.rfind(" ", 0, WIDTH)
+                if cut == -1:
+                    cut = WIDTH
+                print(f"  {color}{s[:cut]}{R}")
+                s = s[cut:].lstrip()
+            if s:
+                print(f"  {color}{s}{R}")
 
+def git_log(path, count=3):
+    """Get recent git commits for the path."""
+    try:
+        result = subprocess.run(
+            ["git", "--no-pager", "-C", path, "log", "--oneline", f"-{count}"],
+            capture_output=True, text=True, timeout=2
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split("\n")
+    except Exception:
+        pass
+    return []
+
+# ─── Git history ──────────────────────────────────────────────────────────────
+commits = git_log(pane_path) if pane_path else []
+if commits:
+    print(f"  {M}recent commits{R}")
+    for c in commits:
+        print(f"  {T}{c}{R}")
+    print("")
+
+# ─── Session store ────────────────────────────────────────────────────────────
 if not pane_path or not os.path.exists(db_path):
-    print(f"  {M}(no matching session data){R}")
+    if not commits:
+        print(f"  {M}(no session data){R}")
+    print("")
+    print(f"  {M}{'─' * 50}{R}")
+    print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
     sys.exit(0)
 
 conn = sqlite3.connect(db_path)
@@ -138,7 +182,7 @@ if not session:
 if not session:
     print(f"  {M}(no Copilot session for this directory){R}")
     print("")
-    print(f"  {M}{'─' * WIDTH}{R}")
+    print(f"  {M}{'─' * 50}{R}")
     print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
     sys.exit(0)
 
@@ -146,7 +190,7 @@ session_id = session["id"]
 summary = session["summary"] or "(no summary)"
 updated = session["updated_at"] or ""
 
-print(f"  {O}{BD}{summary}{R}")
+print(f"  {P}{BD}{summary}{R}")
 print(f"  {M}{updated[:19].replace('T', ' ')}{R}")
 print("")
 
@@ -159,34 +203,31 @@ cp = conn.execute("""
 
 if cp:
     if cp["title"]:
-        print(f"  {M}──{R} {P}{BD}{cp['title']}{R} {M}──{R}")
+        print(f"  {M}── {cp['title']} ──{R}")
         print("")
 
     if cp["overview"]:
-        prose(cp["overview"], T)
+        sentences(cp["overview"], T)
         print("")
 
     if cp["work_done"]:
-        print(f"  {G}{BD}✓ Done{R}")
-        prose(cp["work_done"], G)
+        sentences(cp["work_done"], T, label="✓ Done", label_color=G)
         print("")
 
     if cp["next_steps"]:
-        print(f"  {N}{BD}→ Next{R}")
-        prose(cp["next_steps"], N)
+        sentences(cp["next_steps"], T, label="→ Next", label_color=N)
 else:
     turn = conn.execute("""
         SELECT user_message FROM turns
         WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1
     """, (session_id,)).fetchone()
     if turn and turn["user_message"]:
-        print(f"  {M}ASK:{R}")
-        prose(turn["user_message"][:300], T)
+        sentences(turn["user_message"][:400], T, label="ask")
 
 conn.close()
 
 # Help — always visible at the bottom
 print("")
-print(f"  {M}{'─' * WIDTH}{R}")
+print(f"  {M}{'─' * 50}{R}")
 print(f"  {M}shift-↑↓ scroll · shift-←→ page · esc close{R}")
 PYEOF
