@@ -35,7 +35,8 @@ grep -qxF ".cfg" "$HOME/.gitignore" 2>/dev/null || echo ".cfg" >> "$HOME/.gitign
 echo "→ Cloning dotfiles..."
 git clone --bare "$REPO" "$CFG_DIR"
 
-# Disable cone mode (sparse-checkout patterns use non-cone syntax)
+# Disable sparse-checkout (bare clone won't have the patterns file)
+config config core.sparseCheckout false
 config config core.sparseCheckoutCone false
 
 # Attempt checkout — back up any conflicting files first
