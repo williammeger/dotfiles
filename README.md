@@ -8,44 +8,59 @@ Personal system configuration files managed via a [bare git repo](https://www.at
 
 ### 1. Prerequisites
 
-Install Homebrew first — it's required by several dotfiles at load time:
-
 ```sh
+# Install Homebrew (required by several dotfiles at load time)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install GitHub CLI and authenticate (repo is private — this is required)
+brew install gh
+gh auth login
+gh auth setup-git      # registers gh as the git credential helper
 ```
 
 ### 2. Bootstrap
 
-Run the install script directly:
+Because the repo is private, raw `curl` from GitHub will 404 without auth.
+After authenticating with `gh`, fetch and run the install script:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/williammeger/dotfiles/main/.bin/install.sh | bash
+gh api repos/williammeger/dotfiles/contents/.bin/install.sh \
+  --jq '.content' | base64 -d | bash
 ```
 
-Or manually:
+Or clone to a temp location and run locally:
 
 ```sh
-# Prevent recursion issues
+git clone https://github.com/williammeger/dotfiles.git /tmp/dotfiles-bootstrap
+bash /tmp/dotfiles-bootstrap/.bin/install.sh
+rm -rf /tmp/dotfiles-bootstrap
+```
+
+### 3. Manual alternative
+
+If you prefer to run the steps yourself:
+
+```sh
 echo ".cfg" >> ~/.gitignore
 
-# Clone bare repo
 git clone --bare https://github.com/williammeger/dotfiles.git $HOME/.cfg
 
-# Set up config alias for this session
 alias config='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME'
 
-# Checkout files — backs up any conflicts to ~/.dotfiles-backup/
 mkdir -p ~/.dotfiles-backup
 config checkout 2>&1 | egrep "\s+\." | awk '{print $1}' | xargs -I{} mv {} ~/.dotfiles-backup/{}
 config checkout
 
-# Hide untracked files from config status
 config config status.showUntrackedFiles no
 ```
 
-### 3. Git identity
+Then reload your shell:
 
-Set a per-repo git identity:
+```sh
+source ~/.zshrc
+```
+
+### 4. Git identity
 
 ```sh
 cat > ~/.gitconfig.personal << 'EOF'
