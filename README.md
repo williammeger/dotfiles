@@ -22,60 +22,37 @@ That's it. Reload your shell (`source ~/.zshrc`) and the `config` alias is avail
 
 ### 3. Post-bootstrap: push credentials
 
-The bootstrap clones via HTTPS (read-only, no auth needed). To push changes,
-set up SSH so the dotfiles remote always uses your personal GitHub credentials:
-
-**Generate a personal SSH key:**
+The repo is public so cloning needs no auth. To push changes, authenticate
+with your personal GitHub account:
 
 ```sh
-ssh-keygen -t ed25519 -C "williammeger" -f ~/.ssh/id_ed25519_personal -N ""
+brew install gh
+gh auth login --hostname github.com    # log in as williammeger
+gh auth setup-git
 ```
 
-**Add it to your personal GitHub:**
+Verify:
 
 ```sh
-pbcopy < ~/.ssh/id_ed25519_personal.pub
-# Go to https://github.com/settings/keys → New SSH key → paste and save
-```
-
-**Add the host alias** (if not already delivered by dotfiles):
-
-```sh
-cat >> ~/.ssh/config << 'EOF'
-
-Host github.com-personal
-  HostName github.com
-  AddKeysToAgent yes
-  UseKeychain yes
-  IdentityFile ~/.ssh/id_ed25519_personal
-EOF
-```
-
-**Switch the dotfiles remote to SSH:**
-
-```sh
-config remote set-url origin git@github.com-personal:williammeger/dotfiles.git
-```
-
-**Verify:**
-
-```sh
-ssh -T git@github.com-personal
-# → "Hi williammeger! You've successfully authenticated..."
+config push --dry-run origin main
 ```
 
 ### 4. Work GitHub setup
 
-For work repos, authenticate with your work account separately:
+For work repos, add your work account:
 
 ```sh
-brew install gh
 gh auth login          # authenticate with work account (william-meger)
 gh auth setup-git
 ```
 
-This registers `gh` as the credential helper for `github.com`. Since dotfiles
-use `github.com-personal` as the SSH host, the two never cross.
+When pushing dotfiles, switch to your personal account first:
+
+```sh
+gh auth switch --user williammeger
+config push origin main
+gh auth switch --user william-meger
+```
 
 ### 5. Git identity
 
