@@ -45,7 +45,10 @@ CONFLICTS=$(config checkout 2>&1 | grep -E "\s+\." | awk '{print $1}' || true)
 
 if [ -n "$CONFLICTS" ]; then
   echo "→ Backing up conflicting files to $BACKUP_DIR..."
-  echo "$CONFLICTS" | xargs -I{} sh -c 'mkdir -p "'"$BACKUP_DIR"'/$(dirname {})" && mv "$HOME/{}" "'"$BACKUP_DIR"'/{}"'
+  echo "$CONFLICTS" | while IFS= read -r file; do
+    mkdir -p "$BACKUP_DIR/$(dirname "$file")"
+    mv "$HOME/$file" "$BACKUP_DIR/$file"
+  done
 fi
 
 config checkout
