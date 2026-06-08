@@ -41,17 +41,14 @@ config config core.sparseCheckoutCone false
 
 # Attempt checkout — back up any conflicting files first
 mkdir -p "$BACKUP_DIR"
-CONFLICTS=$(config checkout 2>&1 | grep -E "\s+\." | awk '{print $1}' || true)
-
-if [ -n "$CONFLICTS" ]; then
+if ! config checkout 2>/dev/null; then
   echo "→ Backing up conflicting files to $BACKUP_DIR..."
-  echo "$CONFLICTS" | while IFS= read -r file; do
+  config checkout 2>&1 | grep -E "^\s+" | awk '{print $1}' | while IFS= read -r file; do
     mkdir -p "$BACKUP_DIR/$(dirname "$file")"
-    mv "$HOME/$file" "$BACKUP_DIR/$file"
+    mv "$HOME/$file" "$BACKUP_DIR/$file" 2>/dev/null || true
   done
+  config checkout
 fi
-
-config checkout
 config config status.showUntrackedFiles no
 
 echo ""
