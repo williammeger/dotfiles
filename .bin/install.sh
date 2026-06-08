@@ -35,6 +35,9 @@ grep -qxF ".cfg" "$HOME/.gitignore" 2>/dev/null || echo ".cfg" >> "$HOME/.gitign
 echo "→ Cloning dotfiles..."
 git clone --bare "$REPO" "$CFG_DIR"
 
+# Disable cone mode (sparse-checkout patterns use non-cone syntax)
+config config core.sparseCheckoutCone false
+
 # Attempt checkout — back up any conflicting files first
 mkdir -p "$BACKUP_DIR"
 CONFLICTS=$(config checkout 2>&1 | grep -E "\s+\." | awk '{print $1}')

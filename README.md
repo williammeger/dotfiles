@@ -20,6 +20,15 @@ curl -fsSL https://raw.githubusercontent.com/williammeger/dotfiles/main/.bin/ins
 
 That's it. Reload your shell (`source ~/.zshrc`) and the `config` alias is available.
 
+### Reset (start over)
+
+If something went wrong and you need to re-run the bootstrap:
+
+```sh
+rm -rf ~/.cfg ~/.oh-my-zsh ~/.dotfiles-backup
+curl -fsSL https://raw.githubusercontent.com/williammeger/dotfiles/main/.bin/install.sh | bash
+```
+
 ### 3. Post-bootstrap: push credentials
 
 The repo is public so cloning needs no auth. To push changes, authenticate
