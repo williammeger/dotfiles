@@ -9,58 +9,75 @@ Personal system configuration files managed via a [bare git repo](https://www.at
 ### 1. Prerequisites
 
 ```sh
-# Install Homebrew (required by several dotfiles at load time)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install GitHub CLI and authenticate (repo is private — this is required)
-brew install gh
-gh auth login
-gh auth setup-git      # registers gh as the git credential helper
 ```
 
 ### 2. Bootstrap
 
-Because the repo is private, raw `curl` from GitHub will 404 without auth.
-After authenticating with `gh`, fetch and run the install script:
-
 ```sh
-gh api repos/williammeger/dotfiles/contents/.bin/install.sh \
-  --jq '.content' | base64 -d | bash
+curl -fsSL https://raw.githubusercontent.com/williammeger/dotfiles/main/.bin/install.sh | bash
 ```
 
-Or clone to a temp location and run locally:
+That's it. Reload your shell (`source ~/.zshrc`) and the `config` alias is available.
+
+### 3. Post-bootstrap: push credentials
+
+The bootstrap clones via HTTPS (read-only, no auth needed). To push changes,
+set up SSH so the dotfiles remote always uses your personal GitHub credentials:
+
+**Generate a personal SSH key:**
 
 ```sh
-git clone https://github.com/williammeger/dotfiles.git /tmp/dotfiles-bootstrap
-bash /tmp/dotfiles-bootstrap/.bin/install.sh
-rm -rf /tmp/dotfiles-bootstrap
+ssh-keygen -t ed25519 -C "williammeger" -f ~/.ssh/id_ed25519_personal -N ""
 ```
 
-### 3. Manual alternative
-
-If you prefer to run the steps yourself:
+**Add it to your personal GitHub:**
 
 ```sh
-echo ".cfg" >> ~/.gitignore
-
-git clone --bare https://github.com/williammeger/dotfiles.git $HOME/.cfg
-
-alias config='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME'
-
-mkdir -p ~/.dotfiles-backup
-config checkout 2>&1 | egrep "\s+\." | awk '{print $1}' | xargs -I{} mv {} ~/.dotfiles-backup/{}
-config checkout
-
-config config status.showUntrackedFiles no
+pbcopy < ~/.ssh/id_ed25519_personal.pub
+# Go to https://github.com/settings/keys → New SSH key → paste and save
 ```
 
-Then reload your shell:
+**Add the host alias** (if not already delivered by dotfiles):
 
 ```sh
-source ~/.zshrc
+cat >> ~/.ssh/config << 'EOF'
+
+Host github.com-personal
+  HostName github.com
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519_personal
+EOF
 ```
 
-### 4. Git identity
+**Switch the dotfiles remote to SSH:**
+
+```sh
+config remote set-url origin git@github.com-personal:williammeger/dotfiles.git
+```
+
+**Verify:**
+
+```sh
+ssh -T git@github.com-personal
+# → "Hi williammeger! You've successfully authenticated..."
+```
+
+### 4. Work GitHub setup
+
+For work repos, authenticate with your work account separately:
+
+```sh
+brew install gh
+gh auth login          # authenticate with work account (william-meger)
+gh auth setup-git
+```
+
+This registers `gh` as the credential helper for `github.com`. Since dotfiles
+use `github.com-personal` as the SSH host, the two never cross.
+
+### 5. Git identity
 
 ```sh
 cat > ~/.gitconfig.personal << 'EOF'
