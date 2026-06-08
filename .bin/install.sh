@@ -22,6 +22,12 @@ if [ -d "$CFG_DIR" ]; then
   exit 1
 fi
 
+# Install oh-my-zsh (required before .zshrc is sourced)
+if [ ! -d "$HOME/.oh-my-zsh" ]; then
+  echo "→ Installing oh-my-zsh..."
+  RUNZSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+fi
+
 # Ensure .cfg is ignored before cloning
 grep -qxF ".cfg" "$HOME/.gitignore" 2>/dev/null || echo ".cfg" >> "$HOME/.gitignore"
 
