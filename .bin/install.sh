@@ -3,7 +3,6 @@ set -e
 
 REPO="https://github.com/williammeger/dotfiles.git"
 CFG_DIR="$HOME/.cfg"
-BACKUP_DIR="$HOME/.dotfiles-backup"
 
 function config {
   /usr/bin/git --git-dir="$CFG_DIR" --work-tree="$HOME" "$@"
@@ -39,19 +38,11 @@ git clone --bare "$REPO" "$CFG_DIR"
 config config core.sparseCheckout false
 config config core.sparseCheckoutCone false
 
-# Attempt checkout — back up any conflicting files first
-mkdir -p "$BACKUP_DIR"
-if ! config checkout 2>/dev/null; then
-  echo "→ Backing up conflicting files to $BACKUP_DIR..."
-  config checkout 2>&1 | grep -E "^\s+" | awk '{print $1}' | while IFS= read -r file; do
-    mkdir -p "$BACKUP_DIR/$(dirname "$file")"
-    mv "$HOME/$file" "$BACKUP_DIR/$file" 2>/dev/null || true
-  done
-  config checkout
-fi
+# Checkout (force overwrites any existing files)
+echo "→ Checking out dotfiles..."
+config checkout --force
 config config status.showUntrackedFiles no
 
 echo ""
 echo "✅ Dotfiles installed."
-[ -n "$CONFLICTS" ] && echo "   Pre-existing files backed up to: $BACKUP_DIR"
 echo "   Reload your shell or run: source ~/.zshrc"
