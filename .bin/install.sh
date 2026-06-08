@@ -41,7 +41,7 @@ config config core.sparseCheckoutCone false
 
 # Attempt checkout — back up any conflicting files first
 mkdir -p "$BACKUP_DIR"
-CONFLICTS=$(config checkout 2>&1 | grep -E "\s+\." | awk '{print $1}')
+CONFLICTS=$(config checkout 2>&1 | grep -E "\s+\." | awk '{print $1}' || true)
 
 if [ -n "$CONFLICTS" ]; then
   echo "→ Backing up conflicting files to $BACKUP_DIR..."
