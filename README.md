@@ -37,24 +37,7 @@ Verify:
 config push --dry-run origin main
 ```
 
-### 4. Work GitHub setup
-
-For work repos, add your work account:
-
-```sh
-gh auth login          # authenticate with work account (william-meger)
-gh auth setup-git
-```
-
-When pushing dotfiles, switch to your personal account first:
-
-```sh
-gh auth switch --user williammeger
-config push origin main
-gh auth switch --user william-meger
-```
-
-### 5. Git identity
+### 4. Git identity
 
 ```sh
 cat > ~/.gitconfig.personal << 'EOF'
