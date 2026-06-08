@@ -27,6 +27,13 @@ if [ ! -d "$HOME/.oh-my-zsh" ]; then
   RUNZSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 fi
 
+# Install custom oh-my-zsh plugins
+if [ ! -d "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/gradle-completion" ]; then
+  echo "→ Installing gradle-completion plugin..."
+  git clone https://github.com/gradle/gradle-completion.git \
+    "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/gradle-completion"
+fi
+
 # Ensure .cfg is ignored before cloning
 grep -qxF ".cfg" "$HOME/.gitignore" 2>/dev/null || echo ".cfg" >> "$HOME/.gitignore"
 
