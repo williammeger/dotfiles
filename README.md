@@ -114,3 +114,25 @@ To stop tracking a file without deleting it locally:
 ```sh
 config rm --cached ~/.filename
 ```
+
+---
+
+## Migrating Between Machines
+
+Some files are intentionally untracked — they contain secrets, credentials, or
+machine-specific configuration that shouldn't be shared across all machines.
+
+**On the source machine**, archive what you need:
+
+```sh
+tar czf ~/Desktop/machine-config.tar.gz -C ~ <file1> <dir1/> <file2> ...
+```
+
+**On the target machine**, extract:
+
+```sh
+tar xzf ~/Downloads/machine-config.tar.gz -C ~
+```
+
+Only transfer files relevant to the target. A personal machine should not
+receive work configs, and vice versa.
