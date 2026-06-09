@@ -19,5 +19,5 @@
 [include]
     path = ~/.gitconfig.local
 
-[includeIf "gitdir:~/.cfg/"]
+[includeIf "gitdir:~/.cfg"]
     path = ~/.gitconfig.personal
