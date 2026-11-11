@@ -110,10 +110,6 @@ for file in ~/.{extra,exports,aliases,env-local,functions,env-android,aliases-an
    done
 unset file
 
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-export SDKMAN_DIR="$HOME/.sdkman"
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-
 # Created by `pipx` on 2025-05-19 15:14:45
 export PATH="$PATH:/Users/wiliammeger/.local/bin"
 # asdf shims managed by oh-my-zsh asdf plugin (plugins line above)
@@ -134,3 +130,15 @@ _adb_completion() {
   fi
 }
 compdef _adb_completion adb abd
+
+. "$HOME/.local/bin/env"
+
+
+#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
+export SDKMAN_DIR="$HOME/.sdkman"
+[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+
+# Disabled 2026-11-11: its GH_TOKEN is revoked (gh returned 401) and, exported
+# in every shell, it overrode the valid keyring login. The hackathon is over.
+# [ -f ~/.config/hackathon/env ] && source ~/.config/hackathon/env
